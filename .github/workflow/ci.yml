@@ -30,7 +30,7 @@ jobs:
       DEBUG: ${{ secrets.DEBUG }}
       ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/test_db"
-    
+
     steps:
       - uses: actions/checkout@v2
       - name: Install uv
@@ -40,13 +40,13 @@ jobs:
 
       - name: Set up Python
         run: uv python install 3.13
-      
+
       - name: Install dependencies
         run: uv sync --frozen --all-extras --dev
 
       - name: Check Type Hints
         run: uv run mypy .
-      
+
       - name: Run Tests
         run: uv run pytest -p no:cacheprovider || [ $? -eq 5 ]
 

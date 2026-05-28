@@ -25,7 +25,7 @@ COPY pyproject.toml uv.lock ./
 
 RUN uv sync --frozen --no-dev
 
-# STAGE 2: Runtime 
+# STAGE 2: Runtime
 FROM python:3.13-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

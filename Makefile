@@ -27,7 +27,8 @@ lint:
 	uv run ruff check . --fix
 	uv run mypy .
 
-# Docker commands 
+
+# Docker commands
 up:
 	docker compose up
 
