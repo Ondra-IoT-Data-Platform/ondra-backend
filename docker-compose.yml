@@ -2,9 +2,16 @@
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: app/Dockerfile
     ports:
-      - "8001:8001"
+      - "9000:8001"
+    volumes:
+      - .:/app/app
+      - /app/.venv
+      - ./staticfiles:/app/staticfiles
+      - ./mediafiles:/app/mediafiles
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}

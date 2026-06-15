@@ -2,10 +2,12 @@ from django.http import HttpRequest, HttpResponse
 from ninja import NinjaAPI
 from ninja.errors import AuthenticationError, AuthorizationError, HttpError
 
-from config.schema import MESSAGES, StatusCode, StatusMessage
+from app.config.schema import MESSAGES, StatusCode, StatusMessage
 
 
 class APIException(HttpError):
+    """Base class for API exceptions"""
+
     def __init__(self, status_code: int, message: str):
         super().__init__(status_code=status_code, message=message)
         self.status_code = status_code
@@ -13,6 +15,8 @@ class APIException(HttpError):
 
 
 class BadRequestException(APIException):
+    """Bad request exception"""
+
     def __init__(self, message: str | None = None):
         super().__init__(
             StatusCode.BAD_REQUEST.value,
@@ -21,6 +25,8 @@ class BadRequestException(APIException):
 
 
 class NotFoundException(APIException):
+    """Not found exception"""
+
     def __init__(self, message: str | None = None):
         super().__init__(
             StatusCode.NOT_FOUND.value,
@@ -29,6 +35,8 @@ class NotFoundException(APIException):
 
 
 class UnauthorizedException(APIException):
+    """Unauthorized exception"""
+
     def __init__(self, message: str | None = None):
         super().__init__(
             StatusCode.UNAUTHORIZED.value,
@@ -37,6 +45,8 @@ class UnauthorizedException(APIException):
 
 
 class ForbiddenException(APIException):
+    """Forbidden exception"""
+
     def __init__(self, message: str | None = None):
         super().__init__(
             StatusCode.FORBIDDEN.value,
@@ -45,6 +55,8 @@ class ForbiddenException(APIException):
 
 
 class InternalServerErrorException(APIException):
+    """Internal server error exception"""
+
     def __init__(self, message: str | None = None):
         super().__init__(
             StatusCode.INTERNAL_SERVER_ERROR.value,
@@ -53,6 +65,8 @@ class InternalServerErrorException(APIException):
 
 
 class ConflictException(APIException):
+    """Conflict exception"""
+
     def __init__(self, message: str | None = None):
         super().__init__(
             StatusCode.CONFLICT.value,

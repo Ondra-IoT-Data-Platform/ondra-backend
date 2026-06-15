@@ -34,6 +34,7 @@ env_settings = EnvSettings()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+print(BASE_DIR)
 
 
 SECRET_KEY = env_settings.SECRET_KEY
@@ -53,6 +54,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "app.access",
+    "app.users",
+    "app.organization",
+    # "ninja_jwt"
 ]
 
 MIDDLEWARE = [
@@ -93,6 +98,12 @@ DATABASES = {
         default=env_settings.DATABASE_URL, conn_max_age=600, conn_health_checks=True
     ),
 }
+
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "mediafiles"
 
 
 # Password validation

@@ -20,7 +20,7 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_PYTHON_DOWNLOADS=never
 
 
-COPY pyproject.toml uv.lock ./
+COPY ../pyproject.toml ../uv.lock ./
 
 
 RUN uv sync --frozen --no-dev
@@ -44,9 +44,12 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy application source code
 COPY . .
 
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8001
 
-# Uvicorn runs Django as an ASGI app — required for Django Ninja async support.
-# --host 0.0.0.0 means the container accepts traffic from outside itself.
-CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+EXPOSE 8001
