@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from django.db import models
+from django.utils import timezone
 
 
 class Organizations(models.Model):
@@ -9,7 +10,9 @@ class Organizations(models.Model):
     slug = models.SlugField(max_length=255, unique=True)
     industry = models.CharField(max_length=255, blank=True, null=True)
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    # created_at = models.DateTimeField(auto_now_add=True)
+    # updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
@@ -22,9 +25,11 @@ class OrganizationSettings(models.Model):
     organization = models.OneToOneField(
         Organizations, on_delete=models.CASCADE, related_name="settings"
     )
-    timezone = models.CharField(max_length=255, blank=True, null=True)
+    time_zone = models.CharField(max_length=255, blank=True, null=True)
     language = models.CharField(max_length=255, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    # created_at = models.DateTimeField(auto_now_add=True)
+    # updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:

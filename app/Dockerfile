@@ -16,11 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /usr/local/bin/uv
 
-ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_PYTHON_DOWNLOADS=never
 
 
-COPY ../pyproject.toml ../uv.lock ./
+COPY pyproject.toml uv.lock ./
 
 
 RUN uv sync --frozen --no-dev
@@ -30,7 +30,7 @@ FROM python:3.13-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
@@ -39,17 +39,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment built in stage 1
-COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /opt/venv /opt/venv
+RUN ls -la /opt/venv/bin/ || echo "venv missing"
 
 # Copy application source code
-COPY . .
+COPY app/ .
 
-COPY entrypoint.sh /entrypoint.sh
+COPY app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 8001
 
 ENTRYPOINT ["/entrypoint.sh"]
-
-
-EXPOSE 8001

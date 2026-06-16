@@ -12,7 +12,7 @@ class VerificationTokenSchema(ModelSchema):
 class VerificationTokenCreateSchema(ModelSchema):
     class Meta:
         model = VerificationTokens
-        fields = ["token_type", "user_id"]
+        fields = ["token_type"]
 
 
 class VerificationTokenUpdateSchema(ModelSchema):
@@ -21,7 +21,7 @@ class VerificationTokenUpdateSchema(ModelSchema):
         fields = ["is_used"]
 
 
-class LoginSchema(ModelSchema):
+class LoginSchema(Schema):
     email: str
     password: str
 
@@ -42,5 +42,6 @@ class VerifyEmailSchema(Schema):
 
 
 class VerificationTokenResponseSchema(Schema):
+    email: str
     token: str
     message: str

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class TokenTypeChoices(models.TextChoices):
@@ -16,7 +17,8 @@ class VerificationTokens(models.Model):
     )
     is_used = models.BooleanField(default=False)
     expires_at = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
+    # created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         indexes = [

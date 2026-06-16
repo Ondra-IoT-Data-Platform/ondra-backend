@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "app.access",
     "app.users",
     "app.organization",
+    "app.terminals",
     # "ninja_jwt"
 ]
 
@@ -88,6 +89,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+
+AUTH_USER_MODEL = "users.User"
 
 
 # Database

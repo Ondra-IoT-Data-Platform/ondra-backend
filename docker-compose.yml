@@ -8,8 +8,7 @@ services:
     ports:
       - "9000:8001"
     volumes:
-      - .:/app/app
-      - /app/.venv
+      - ./app:/app
       - ./staticfiles:/app/staticfiles
       - ./mediafiles:/app/mediafiles
     environment:

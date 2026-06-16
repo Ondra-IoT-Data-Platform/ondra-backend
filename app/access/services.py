@@ -5,14 +5,14 @@ from ninja_jwt.exceptions import TokenError
 from ninja_jwt.tokens import RefreshToken
 
 from app.access.auth import TokenManager
-from app.access.models import VerificationTokens
+from app.access.models import TokenTypeChoices, VerificationTokens
 from app.access.schema import (
     LoginResponseSchema,
     LoginSchema,
     RefreshTokenSchema,
-    VerificationTokenCreateSchema,
     VerificationTokenResponseSchema,
     VerificationTokenSchema,
+    VerificationTokenUpdateSchema,
     VerifyEmailSchema,
 )
 
@@ -20,13 +20,19 @@ User = get_user_model()
 
 
 async def create_email_verify_token_service(
-    data: VerificationTokenCreateSchema,
+    email: str,
 ) -> dict[str, str]:
     """Creates verification token"""
+    user = await User.objects.aget(email=email)
+
+    if user is None:
+        raise User.DoesNotExist from None
 
     try:
         raw_token = await TokenManager.generate_token(
-            user_id=data.user_id, token_type=data.token_type, expires_in=30
+            user_id=str(user.id),
+            token_type=TokenTypeChoices.EMAIL_VERIFICATION,
+            expires_in=30,
         )
         return {
             "token": raw_token,
@@ -49,7 +55,9 @@ async def verify_email_service(
         # Mark the token as used
         await TokenManager.mark_use(verified_token)
         return VerificationTokenResponseSchema(
-            token=verified_token.token_hash, message="Email verified successfully"
+            email=data.email,
+            token=verified_token.token_hash,
+            message="Email verified successfully",
         )
     except UnauthorizedException as e:
         raise UnauthorizedException(str(e)) from e
@@ -88,6 +96,12 @@ async def get_verification_token_service(
         return VerificationTokenSchema.from_orm(token)
     except VerificationTokens.DoesNotExist as e:
         raise BadRequestException("Verification token not found") from e
+
+
+async def update_verification_token_service(
+    data: VerificationTokenUpdateSchema,
+) -> VerificationTokenResponseSchema:
+    pass
 
 
 async def login_service(data: LoginSchema) -> LoginResponseSchema:

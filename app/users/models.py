@@ -4,6 +4,8 @@ from typing import Any
 from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
+    Group,
+    Permission,
     PermissionsMixin,
 )
 from django.core.validators import EmailValidator
@@ -35,11 +37,20 @@ class UserManager(BaseUserManager["User"]):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
 
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True")
+
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True")
+
         return self.create_user(email, password, **extra_fields)
 
 
 class UserRole(models.Model):
     title = models.CharField(max_length=20, unique=True)
+
+    def __str__(self) -> str:
+        return self.title
 
 
 # Account model with fields for email, full name, job title, operations location, role, and standard authentication fields,
@@ -50,8 +61,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         _("email address"), unique=True, db_index=True, validators=[EmailValidator()]
     )
     organization = models.ForeignKey(Organizations, on_delete=models.CASCADE)
-    role = models.OneToOneField(UserRole, on_delete=models.SET_NULL)
-    password = models.CharField(max_length=50, null=False, default="")
+    role = models.ForeignKey(
+        UserRole, on_delete=models.SET_NULL, null=True, blank=True, related_name="users"
+    )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
@@ -62,6 +74,17 @@ class User(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
+    groups = models.ManyToManyField(
+        Group,
+        related_name="custom_user_set",
+        blank=True,
+    )
+    user_permissions = models.ManyToManyField(
+        Permission,
+        related_name="custom_user_permissions_set",
+        blank=True,
+    )
+
     class Meta:
         verbose_name = _("user")
         verbose_name_plural = _("users")
@@ -71,27 +94,37 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class UserProfile(models.Model):
+    class Meta:
+        abstract = True
+
     id = models.UUIDField(
         default=uuid.uuid4, primary_key=True, null=False, editable=False
     )
-    user = models.OneToOneField("User", on_delete=models.CASCADE)
+    user = models.OneToOneField(
+        "User", on_delete=models.CASCADE, related_name="office_profile"
+    )
     full_name = models.CharField(max_length=255, blank=True)
     job_title = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
         return self.full_name
 
 
 class OfficeProfile(UserProfile):
-    display_photo = models.ImageField(
-        upload_to="/app/mediafiles/user_photos/", blank=True, null=True
+    user = models.OneToOneField(
+        "User", on_delete=models.CASCADE, related_name="office_profile"
     )
+    display_photo = models.ImageField(upload_to="user_photos/", blank=True, null=True)
 
 
 class DriverProfile(UserProfile):
+    user = models.OneToOneField(
+        "User", on_delete=models.CASCADE, related_name="driver_profile"
+    )
     license_number = models.CharField(max_length=255, blank=True, null=True)
     ops_location = models.CharField(
         max_length=255, blank=True, null=True, db_index=True
     )
-    # terminal =

@@ -9,6 +9,7 @@ dependencies = [
     "django>=6.0.5",
     "django-ninja>=1.6.2",
     "django-ninja-jwt>=5.4.4",
+    "pillow>=12.2.0",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
     "uvicorn>=0.48.0",

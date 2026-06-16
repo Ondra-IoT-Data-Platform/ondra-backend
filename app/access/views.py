@@ -8,8 +8,8 @@ from ninja import Router
 from app.access.schema import (
     LoginSchema,
     RefreshTokenSchema,
-    VerificationTokenCreateSchema,
     VerificationTokenSchema,
+    VerificationTokenUpdateSchema,
     VerifyEmailSchema,
 )
 from app.access.services import (
@@ -74,11 +74,11 @@ async def get_verification_token(
 
 @router.post("/email/token")
 async def create_email_verification_token(
-    data: VerificationTokenCreateSchema,
+    email: str,
 ) -> dict[str, str]:
     """Creates an email verification token"""
     try:
-        result = await create_email_verify_token_service(data)
+        result = await create_email_verify_token_service(email)
         return create_response(
             status_code=StatusCode.SUCCESS,
             message=StatusMessage.SUCCESS,
@@ -117,7 +117,9 @@ async def create_verification_token(data: VerificationTokenSchema) -> dict[str, 
 
 
 @router.patch("/verification/token")
-async def update_verification_token(data: VerificationTokenSchema) -> dict[str, str]:
+async def update_verification_token(
+    data: VerificationTokenUpdateSchema,
+) -> dict[str, str]:
     """Updates a verification token"""
     try:
         result = await update_verification_token_service(data)

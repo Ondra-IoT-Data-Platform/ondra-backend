@@ -34,7 +34,7 @@ class TokenManager:
 
     @classmethod
     async def generate_token(
-        cls, user_id: int, token_type: str, expires_in: int = 60
+        cls, user_id: str, token_type: str, expires_in: int = 60
     ) -> str:
         """Create a token for a user"""
         if await sync_to_async(
