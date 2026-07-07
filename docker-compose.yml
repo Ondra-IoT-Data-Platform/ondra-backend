@@ -11,6 +11,7 @@ services:
       - ./app:/app
       - ./staticfiles:/app/staticfiles
       - ./mediafiles:/app/mediafiles
+    user: "${UID}:${GID}"
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
