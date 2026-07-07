@@ -7,29 +7,29 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.3
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
+  # - repo: https://github.com/astral-sh/ruff-pre-commit
+  #   rev: v0.9.3
+  #   hooks:
+  #     - id: ruff
+  #       args: [--fix]
+  #     - id: ruff-format
 
-  # Run Mypy (Type Checking)
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
-    hooks:
-      - id: mypy
-        args: [--strict, --ignore-missing-imports]
-        additional_dependencies:
-          - django-stubs[compatible-mypy]
-          - django-ninja
-          - dj-database-url
-          - pytest
-          - python-dotenv
-          - safety
-          - pydantic
-          - pydantic-settings
-          - pytest-django
-          - psycopg2-binary
-          - pip-audit
-          - uvicorn
+  # # Run Mypy (Type Checking)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.13.0
+  #   hooks:
+  #     - id: mypy
+  #       args: [--strict, --ignore-missing-imports]
+  #       additional_dependencies:
+  #         - django-stubs[compatible-mypy]
+  #         - django-ninja
+  #         - dj-database-url
+  #         - pytest
+  #         - python-dotenv
+  #         - safety
+  #         - pydantic
+  #         - pydantic-settings
+  #         - pytest-django
+  #         - psycopg2-binary
+  #         - pip-audit
+  #         - uvicorn

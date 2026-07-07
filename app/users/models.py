@@ -13,7 +13,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from app.organization.models import Organizations
+from organization.models import Organizations
 
 
 # Custom user model for the application, including a custom user manager for handling user
@@ -46,23 +46,58 @@ class UserManager(BaseUserManager["User"]):
         return self.create_user(email, password, **extra_fields)
 
 
-class UserRole(models.Model):
-    title = models.CharField(max_length=20, unique=True)
+
+class Role(models.Model):
+    """
+    Stores the 8 fixed system roles scoped to an organization.
+    Seeded automatically when an organization is created.
+    Role names are fixed — they do not change per organization.
+    """
+
+    class RoleName(models.TextChoices):
+        ORG_ADMIN = "org_admin", "Org Admin"
+        MANAGEMENT = "management", "Management"
+        LOGISTICS_OFFICER = "logistics_officer", "Logistics Officer"
+        TRACKING_OFFICER = "tracking_officer", "Tracking Officer"
+        WORKSHOP = "workshop", "Workshop"
+        SALES = "sales", "Sales / Marketer"
+        CUSTOMER = "customer", "Customer"
+        DRIVER = "driver", "Driver"
+
+    name = models.CharField(
+        max_length=50,
+        choices=RoleName.choices,
+    )
+    organization = models.ForeignKey(
+        Organizations,
+        on_delete=models.CASCADE,
+        related_name="roles",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("name", "organization")
+        ordering = ["name"]
 
     def __str__(self) -> str:
-        return self.title
+        return f"{self.get_name_display()} — {self.organization.name}"
 
 
-# Account model with fields for email, full name, job title, operations location, role, and standard authentication fields,
-# along with metadata and string representation.
+
+
 class User(AbstractBaseUser, PermissionsMixin):
+    """
+    Account model with fields for email, full name, job title, operations location, role,
+    and standard authentication fields,
+    along with metadata and string representation.
+    """
     id = models.UUIDField(default=uuid.uuid4, primary_key=True, editable=False)
     email = models.EmailField(
         _("email address"), unique=True, db_index=True, validators=[EmailValidator()]
     )
     organization = models.ForeignKey(Organizations, on_delete=models.CASCADE)
     role = models.ForeignKey(
-        UserRole, on_delete=models.SET_NULL, null=True, blank=True, related_name="users"
+        Role, on_delete=models.SET_NULL, null=True, blank=True, related_name="users"
     )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -114,6 +149,7 @@ class UserProfile(models.Model):
 
 
 class OfficeProfile(UserProfile):
+    # For office user profiles
     user = models.OneToOneField(
         "User", on_delete=models.CASCADE, related_name="office_profile"
     )
@@ -121,6 +157,7 @@ class OfficeProfile(UserProfile):
 
 
 class DriverProfile(UserProfile):
+    # For drivers profile
     user = models.OneToOneField(
         "User", on_delete=models.CASCADE, related_name="driver_profile"
     )

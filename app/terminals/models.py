@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 
-from app.organization.models import Organizations
+from organization.models import Organizations
 
 
 class Terminals(models.Model):

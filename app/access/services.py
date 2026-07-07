@@ -4,9 +4,9 @@ from django.contrib.auth import authenticate, get_user_model
 from ninja_jwt.exceptions import TokenError
 from ninja_jwt.tokens import RefreshToken
 
-from app.access.auth import TokenManager
-from app.access.models import TokenTypeChoices, VerificationTokens
-from app.access.schema import (
+from access.auth import TokenManager
+from access.models import TokenTypeChoices, VerificationTokens
+from access.schema import (
     LoginResponseSchema,
     LoginSchema,
     RefreshTokenSchema,

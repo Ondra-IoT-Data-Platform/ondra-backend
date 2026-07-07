@@ -1,29 +1,47 @@
 import hashlib
 import secrets
 from datetime import timedelta
-from typing import Any
+from typing import Any, Optional
 
 from asgiref.sync import sync_to_async
 from config.exceptions import UnauthorizedException
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractBaseUser
 from django.utils import timezone
 from ninja_jwt.authentication import (
     JWTAuth as BaseJWTAuth,
 )
+from ninja import Schema
+from ninja.security import HttpBearer
+from ninja_jwt.tokens import AccessToken
+from ninja_jwt.exceptions import TokenError
 
-from app.access.models import VerificationTokens
+from access.models import VerificationTokens
 
 User = get_user_model()
 
 
-class JWTAuth(BaseJWTAuth):  # type: ignore[misc]
-    async def authenticate(self, request: Any, token: str) -> AbstractBaseUser | None:
-        user = super().authenticate(request, token)
-        if user is None:
-            raise UnauthorizedException("Invalid or expired token")
-        return user
+class JWTAuthBearer(HttpBearer):
+    """
+    Reads custom claims from the validated JWT.
+    Attaches a lightweight user context to request.auth
+    without a database query on every authenticated request.
+    """
 
+    async def authenticate(self, request, token: str) -> Optional[Any]:
+        try:
+            validated_token = AccessToken(token)
+
+            # Read custom claims we added in get_token
+            return {
+                "user_id": validated_token["user_id"],
+                "org_id": validated_token.get("org_id"),
+                "role_id": validated_token.get("role_id"),
+                "role_name": validated_token.get("role_name"),
+                "is_superuser": validated_token.get("is_superuser")
+            }
+
+        except TokenError:
+            return None
 
 class TokenManager:
     """Create and hash tokens for email verification and etcetcera"""

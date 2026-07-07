@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -48,18 +49,36 @@ ALLOWED_HOSTS = env_settings.ALLOWED_HOSTS
 # Application definition
 
 INSTALLED_APPS = [
+    "ninja_jwt.token_blacklist",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "app.access",
-    "app.users",
-    "app.organization",
-    "app.terminals",
+    "access",
+    "users",
+    "organization",
+    "terminals",
+    "customers",
+    "dispatch",
+    "fleet",
+    "rfid_events"
     # "ninja_jwt"
 ]
+
+
+
+NINJA_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "TOKEN_OBTAIN_PAIR_INPUT_SCHEMA": "access.schema.CustomTokenObtainPairInputSchema",
+    "TOKEN_OBTAIN_PAIR_OUTPUT_SCHEMA": "access.schema.CustomTokenObtainPairOutputSchema",
+}
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

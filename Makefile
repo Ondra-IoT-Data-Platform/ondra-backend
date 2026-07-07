@@ -20,6 +20,9 @@ superuser:
 shell:
 	$(MANAGE) shell
 
+showmigrations:
+	$(MANAGE) showmigrations
+
 test:
 	uv run pytest
 
@@ -70,6 +73,9 @@ app-superuser:
 
 makemigrations:
 	docker compose run --rm --entrypoint "" app python manage.py makemigrations
+
+makemigrate:
+	docker compose run --rm --entrypoint "" app python manage.py migrate
 
 app-test:
 	docker compose exec app pytest

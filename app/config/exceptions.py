@@ -2,7 +2,7 @@ from django.http import HttpRequest, HttpResponse
 from ninja import NinjaAPI
 from ninja.errors import AuthenticationError, AuthorizationError, HttpError
 
-from app.config.schema import MESSAGES, StatusCode, StatusMessage
+from config.schema import MESSAGES, StatusCode, StatusMessage
 
 
 class APIException(HttpError):
