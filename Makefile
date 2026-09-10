@@ -1,10 +1,10 @@
 # Makefile configuration
 
-.PHONY: run
+.PHONY: run app
 
-MANAGE = uv run python manage.py
-DOCKER-RUN = docker compose exec app python manage.py
-
+MANAGE := uv run python app/manage.py
+DOCKER-RUN = docker compose exec app python app/manage.py
+name = ""
 run:
 	$(MANAGE) runserver
 
@@ -20,12 +20,18 @@ superuser:
 shell:
 	$(MANAGE) shell
 
+showmigrations:
+	$(MANAGE) showmigrations
+
 test:
 	uv run pytest
 
 lint:
 	uv run ruff check . --fix
 	uv run mypy .
+
+app:
+	$(MANAGE) startapp $(name) app/$(name)
 
 
 # Docker commands
@@ -65,6 +71,15 @@ app-showmigrations:
 app-superuser:
 	$(DOCKER-RUN) createsuperuser
 
+
+createsuperuser:
+	docker compose run --rm --entrypoint "" app python manage.py createsuperuser
+
+makemigrations:
+	docker compose run --rm --entrypoint "" app python manage.py makemigrations
+
+makemigrate:
+	docker compose run --rm --entrypoint "" app python manage.py migrate
 
 app-test:
 	docker compose exec app pytest

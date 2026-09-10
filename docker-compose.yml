@@ -2,9 +2,16 @@
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: app/Dockerfile
     ports:
-      - "8001:8001"
+      - "9000:9000"
+    volumes:
+      - ./app:/app
+      - ./staticfiles:/app/staticfiles
+      - ./mediafiles:/app/mediafiles
+    user: "${UID}:${GID}"
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
@@ -51,11 +58,41 @@ services:
     networks:
       - app_network
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  mqtt-subscriber:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    entrypoint: ""
+    command: python manage.py mqtt_subscriber
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./app:/app
 
 networks:
   app_network:
     driver: bridge
 
 volumes:
+  store:
   postgres_data:
   pgadmin_data:

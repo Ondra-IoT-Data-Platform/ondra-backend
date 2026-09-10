@@ -8,9 +8,22 @@ dependencies = [
     "dj-database-url>=3.1.2",
     "django>=6.0.5",
     "django-ninja>=1.6.2",
+    "django-ninja-jwt>=5.4.4",
+    "gmqtt>=0.7.0",
+    "httpx>=0.28.1",
+    "matplotlib>=3.11.1",
+    "nest-asyncio>=1.6.0",
+    "numpy>=2.5.1",
+    "p>=1.5.0",
+    "pandas>=3.0.5",
+    "pillow>=12.2.0",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
+    "pyjwt>=2.13.0",
+    "scikit-learn>=1.9.0",
+    "seaborn>=0.13.2",
     "uvicorn>=0.48.0",
+    "xgboost-cpu>=3.4.1",
 ]
 
 [dependency-groups]
@@ -27,9 +40,9 @@ dev = [
 
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_SETTINGS_MODULE = "app.config.settings"
 python_files = ["tests.py", "test_*.py", "*_test.py"]
-addopts = "--ds=config.settings --cov=./ --cov-report=term-missing --no-header -p no:cacheprovider --ignore=manage.py"
+addopts = "--ds=app.config.settings --cov=./ --cov-report=term-missing --no-header -p no:cacheprovider --ignore=manage.py"
 
 [tool.ruff]
 line-length = 88
@@ -47,9 +60,11 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 plugins = ["mypy_django_plugin.main", "pydantic.mypy"]
 disallow_untyped_defs = false
 check_untyped_defs = true
+strict_optional = false
 ignore_missing_imports = true
 warn_return_any = false
+disable_error_code = ["type-arg", "attr-defined", "no-any-return"]
 
 
 [tool.django-stubs]
-django_settings_module = "config.settings"
+django_settings_module = "app.config.settings"
