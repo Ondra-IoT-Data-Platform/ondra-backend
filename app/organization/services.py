@@ -7,28 +7,60 @@
 from uuid import UUID
 from django.contrib.auth import get_user_model
 from asgiref.sync import sync_to_async
+# from users.schema import RoleOutSchema
+
 from config.exceptions import (
+    InternalServerErrorException,
     BadRequestException,
     NotFoundException,
     ForbiddenException,
+    ConflictException
 )
-
 from organization.schema import (
     OrganizationCreateSchema,
     OrganizationUpdateSchema,
     OrganizationOrgAdminUpdateSchema,
     OrganizationOutSchema,
     OrganizationSettingsUpdateSchema,
-    OrganizationSettingsOutSchema
+    OrganizationSettingsOutSchema,
+    OrganizationMembersSchema
 )
-from organization.models import Organizations, OrganizationSettings
+from organization.models import Organizations, OrganizationMember, OrganizationSettings
 
 
 User = get_user_model()
 
 
 
-async def create_organization_service(
+def list_user_roles_service(organization_id: UUID) -> list[dict]:
+    """
+    Lists all available roles for an organization in a format suitable for forms.
+    Returns roles with value and label for dropdown selection.
+    """
+    try:
+        # Validate organization exists
+        if not Organizations.objects.filter(id=organization_id, is_active=True).exists():
+            raise NotFoundException("Organization not found")
+
+        # Get all role choices from the model
+        roles = []
+        for role_value, role_label in OrganizationMember.RoleChoices.choices:
+            roles.append({
+                "value": role_value,
+                "label": role_label
+            })
+
+        return roles
+
+    except NotFoundException:
+        raise
+    except Exception as e:
+        raise BadRequestException(f"Failed to list roles: {str(e)}") from e
+
+
+
+
+def create_organization_service(
     data: OrganizationCreateSchema,
 ) -> OrganizationOutSchema:
     """
@@ -37,51 +69,81 @@ async def create_organization_service(
     Seeds all 8 roles automatically after creation.
     """
     try:
-        exists = await Organizations.objects.filter(
+        print("Attempting to filter org by slug")
+        exists = Organizations.objects.filter(
             slug=data.slug
-        ).aexists()
+        )
+
         if exists:
-            from config.exceptions import ConflictException
+
             raise ConflictException(
                 f"Organization with slug '{data.slug}' already exists"
             ) from None
 
-        org = await Organizations.objects.acreate(**data.dict())
+        org_data = data.model_dump()
+        org =   Organizations.objects.create(**org_data)
+
 
         # Seed roles for the new organization
-        await _seed_org_roles(org)
+        # a _seed_org_roles(org)
 
-        return OrganizationOutSchema(org)
+        return OrganizationOutSchema.model_validate(org)
+    except ConflictException:
+        raise
     except Exception as e:
-        if "already exists" in str(e).lower() or "conflict" in type(e).__name__.lower():
-            raise
+        # if "already exists" in str(e).lower() or "conflict" in type(e).__name__.lower():
+        #     raise
+        raise InternalServerErrorException(str(e)) from e
+
+
+
+# async def _seed_org_roles(org: Organizations) -> None:
+#     """Seeds all 8 default roles for a new organization."""
+#     from users.models import Role
+
+#     for role_name, _ in Role.RoleName.choices:
+#         await Role.objects.aget_or_create(
+#             name=role_name,
+#             organization=org
+#         )
+
+
+def list_organization_members_service(organization_id: UUID) -> list[OrganizationMembersSchema]:
+    """
+    Lists all members of an organization.
+    Superuser can list any org's members.
+    Org admin can only list their own org's members.
+    """
+    try:
+        members = OrganizationMember.objects.filter(
+            organization_id=organization_id
+        ).select_related("user", "role")
+
+        return [
+            OrganizationMembersSchema.from_orm(member)
+            for member in members
+        ]
+    except Exception as e:
         raise BadRequestException(str(e)) from e
 
 
-async def _seed_org_roles(org: Organizations) -> None:
-    """Seeds all 8 default roles for a new organization."""
-    from users.models import Role
 
-    for role_name, _ in Role.RoleName.choices:
-        await Role.objects.aget_or_create(
-            name=role_name,
-            organization=org,
-        )
-
-
-async def list_organizations_service() -> list[OrganizationOutSchema]:
+def list_organizations_service() -> list[OrganizationOutSchema]:
     """
     Lists all organizations.
     Superuser only.
     """
     try:
-        orgs = Organizations.objects.filter(is_active=True).order_by("name")
-        return [OrganizationOutSchema(org) async for org in orgs]
+        # Get organizations as a list
+        orgs = list(Organizations.objects.filter(is_active=True).order_by("name"))
+        # Convert each organization to schema using from_orm
+        return [OrganizationOutSchema.model_validate(org) for org in orgs]
+
     except Exception as e:
         raise BadRequestException(str(e)) from e
 
 
-async def get_organization_service(
+def get_organization_service(
     org_id: UUID,
 ) -> OrganizationOutSchema:
     """
@@ -90,15 +152,15 @@ async def get_organization_service(
     Org admin can only get their own org.
     """
     try:
-        org = await Organizations.objects.aget(id=org_id)
-        return OrganizationOutSchema(org)
+        org = Organizations.objects.get(id=org_id)
+        return OrganizationOutSchema.model_validate(org)
     except Organizations.DoesNotExist:
         raise NotFoundException("Organization not found") from None
     except Exception as e:
         raise BadRequestException(str(e)) from e
 
 
-async def update_organization_service(
+def update_organization_service(
     org_id: UUID,
     data: OrganizationUpdateSchema,
 ) -> OrganizationOutSchema:
@@ -107,19 +169,19 @@ async def update_organization_service(
     Can update any field including is_active and slug.
     """
     try:
-        org = await Organizations.objects.aget(id=org_id)
+        org = Organizations.objects.get(id=org_id)
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(org, field, value)
-        await org.asave()
-        return OrganizationOutSchema(org)
+        org.save()
+        return OrganizationOutSchema.model_validate(org)
     except Organizations.DoesNotExist:
         raise NotFoundException("Organization not found") from None
     except Exception as e:
         raise BadRequestException(str(e)) from e
 
 
-async def org_admin_update_organization_service(
+def org_admin_update_organization_service(
     org_id: UUID,
     data: OrganizationOrgAdminUpdateSchema,
 ) -> OrganizationOutSchema:
@@ -128,11 +190,11 @@ async def org_admin_update_organization_service(
     Cannot change slug, is_active, or anything structural.
     """
     try:
-        org = await Organizations.objects.aget(id=org_id)
+        org =  Organizations.objects.get(id=org_id)
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(org, field, value)
-        await org.asave()
+        org.save()
         return OrganizationOutSchema(org)
     except Organizations.DoesNotExist:
         raise NotFoundException("Organization not found") from None
@@ -140,7 +202,7 @@ async def org_admin_update_organization_service(
         raise BadRequestException(str(e)) from e
 
 
-async def deactivate_organization_service(
+def deactivate_organization_service(
     org_id: UUID,
 ) -> None:
     """
@@ -148,21 +210,21 @@ async def deactivate_organization_service(
     Superuser only.
     """
     try:
-        org = await Organizations.objects.aget(id=org_id)
+        org = Organizations.objects.get(id=org_id)
         org.is_active = False
-        await org.asave()
+        org.save()
     except Organizations.DoesNotExist:
         raise NotFoundException("Organization not found") from None
     except Exception as e:
         raise BadRequestException(str(e)) from e
 
 
-async def get_org_settings_service(
+def get_org_settings_service(
     org_id: UUID,
 ) -> OrganizationSettingsOutSchema:
     """Retrieves settings for an organization."""
     try:
-        settings = await OrganizationSettings.objects.aget(
+        settings = OrganizationSettings.objects.get(
             organization_id=org_id
         )
         return OrganizationSettingsOutSchema(settings)
@@ -172,7 +234,7 @@ async def get_org_settings_service(
         raise BadRequestException(str(e)) from e
 
 
-async def update_org_settings_service(
+def update_org_settings_service(
     org_id: UUID,
     data: OrganizationSettingsUpdateSchema,
 ) -> OrganizationSettingsOutSchema:
@@ -181,13 +243,13 @@ async def update_org_settings_service(
     Org admin and superuser can update these.
     """
     try:
-        settings, _ = await OrganizationSettings.objects.aget_or_create(
+        settings, _ = OrganizationSettings.objects.get_or_create(
             organization_id=org_id
         )
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(settings, field, value)
-        await settings.asave()
+        settings.save()
         return OrganizationSettingsOutSchema(settings)
     except Exception as e:
         raise BadRequestException(str(e)) from e

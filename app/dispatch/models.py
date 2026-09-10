@@ -107,6 +107,11 @@ class Dispatch(models.Model):
         blank=True,
         help_text="Estimated time of arrival — computed by ETA prediction module",
     )
+    actual_arrival = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Actual time the truck arrived at the customer and delivery was completed",
+    )
     arrival_token = models.CharField(
         max_length=6,
         null=True,

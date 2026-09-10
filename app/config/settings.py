@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
-
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -45,6 +45,24 @@ DEBUG = env_settings.DEBUG
 
 ALLOWED_HOSTS = env_settings.ALLOWED_HOSTS
 
+# settings.py
+
+# ── MQTT ───────────────────────────────────────────────────
+MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", 1883))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
+MQTT_USE_TLS = os.getenv("MQTT_USE_TLS", "false").lower() == "true"
+MQTT_TOPIC_PREFIX = os.getenv("MQTT_TOPIC_PREFIX", "ondra/production")
+
+# ── ETA ────────────────────────────────────────────────────
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+ETA_MODEL_STORAGE_DIR = os.getenv("ETA_MODEL_STORAGE_DIR", "/app/eta/store")
+ETA_MIN_TRAINING_RECORDS = int(os.getenv("ETA_MIN_TRAINING_RECORDS", 100))
+ETA_RETRAIN_INCREMENT = int(os.getenv("ETA_RETRAIN_INCREMENT", 50))
+
+print(f"MAPS KEY LOADED: {'YES' if GOOGLE_MAPS_API_KEY else 'NO - KEY MISSING'}")
+
 
 # Application definition
 
@@ -63,7 +81,8 @@ INSTALLED_APPS = [
     "customers",
     "dispatch",
     "fleet",
-    "rfid_events"
+    "rfid_events",
+    "eta"
     # "ninja_jwt"
 ]
 
@@ -162,4 +181,16 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+
+
+
+# STATICFILES_DIRS = [BASE_DIR / "staticfiles"] # static files during development
+
+
+STATIC_ROOT = BASE_DIR / "staticfiles" # where collectstatic dumps everything for production
+
+
+# MEDIA SETTINGS
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "mediafiles"

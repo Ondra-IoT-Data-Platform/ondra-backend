@@ -1,8 +1,8 @@
 from uuid import UUID
 
 from ninja import Router
-
-from access.auth import JWTAuthBearer
+from django.db import transaction
+from access.auth_utils import JWTAuthBearer
 from config.exceptions import (
     BadRequestException,
     ConflictException,
@@ -37,9 +37,12 @@ from fleet.services import (
     update_truck_status_service,
     delete_route_service
 )
-from users.models import Role
+from organization.models import OrganizationMember
 
-R = Role.RoleName
+
+R = OrganizationMember.RoleChoices
+
+
 router = Router(tags=["Fleet"], auth=JWTAuthBearer())
 
 FLEET_MANAGERS = [R.ORG_ADMIN, R.MANAGEMENT, R.LOGISTICS_OFFICER]
@@ -55,13 +58,13 @@ STATUS_UPDATERS = [
 
 # ── Products ───────────────────────────────────────────────
 
-@router.post("/products")
+@router.post("/organization/{org_id}/products")
 @require_roles(*FLEET_MANAGERS)
-async def create_product(request, data: ProductCreateSchema) -> dict:
+@transaction.atomic
+def create_product(request, org_id: UUID, data: ProductCreateSchema) -> dict:
     """Creates a product — Management, Logistics Officer, Org Admin only."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await create_product_service(data, org_id)
+        result = create_product_service(data, org_id)
         return create_response(status_code=StatusCode.CREATED, data=result)
     except ConflictException as e:
         raise ConflictException(str(e)) from e
@@ -69,25 +72,23 @@ async def create_product(request, data: ProductCreateSchema) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/products")
+@router.get("/organization/{org_id}/products")
 @require_roles(*FLEET_VIEWERS)
-async def list_products(request) -> dict:
+def list_products(request, org_id: UUID) -> dict:
     """Lists all products for the organization."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await list_products_service(org_id)
+        result = list_products_service(org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except BadRequestException as e:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/products/{product_id}")
+@router.get("/organization/{org_id}/products/{product_id}")
 @require_roles(*FLEET_VIEWERS)
-async def get_product(request, product_id: UUID) -> dict:
+def get_product(request, org_id: UUID, product_id: UUID) -> dict:
     """Retrieves a single product."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await get_product_service(product_id, org_id)
+        result = get_product_service(product_id, org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -95,15 +96,14 @@ async def get_product(request, product_id: UUID) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/products/{product_id}")
+@router.patch("/organization/{org_id}/products/{product_id}")
 @require_roles(*FLEET_MANAGERS)
-async def update_product(
-    request, product_id: UUID, data: ProductUpdateSchema
+def update_product(
+    request, org_id: UUID, product_id: UUID, data: ProductUpdateSchema
 ) -> dict:
     """Updates a product."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await update_product_service(product_id, org_id, data)
+        result = update_product_service(product_id, org_id, data)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -113,13 +113,13 @@ async def update_product(
 
 # ── Routes ─────────────────────────────────────────────────
 
-@router.post("/routes")
+@router.post("/organization/{org_id}/routes")
 @require_roles(*FLEET_MANAGERS)
-async def create_route(request, data: RouteCreateSchema) -> dict:
+@transaction.atomic
+def create_route(request, org_id: UUID, data: RouteCreateSchema) -> dict:
     """Creates a route."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await create_route_service(data, org_id)
+        result = create_route_service(data, org_id)
         return create_response(status_code=StatusCode.CREATED, data=result)
     except ConflictException as e:
         raise ConflictException(str(e)) from e
@@ -127,25 +127,23 @@ async def create_route(request, data: RouteCreateSchema) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/routes")
+@router.get("/organization/{org_id}/routes")
 @require_roles(*FLEET_VIEWERS)
-async def list_routes(request) -> dict:
+def list_routes(request, org_id: UUID) -> dict:
     """Lists all routes for the organization."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await list_routes_service(org_id)
+        result = list_routes_service(org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except BadRequestException as e:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/routes/{route_id}")
+@router.get("/organization/{org_id}/routes/{route_id}")
 @require_roles(*FLEET_VIEWERS)
-async def get_route(request, route_id: UUID) -> dict:
+def get_route(request, org_id: UUID, route_id: UUID) -> dict:
     """Retrieves a single route."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await get_route_service(route_id, org_id)
+        result = get_route_service(route_id, org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -153,15 +151,14 @@ async def get_route(request, route_id: UUID) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/routes/{route_id}")
+@router.patch("/organization/{org_id}/routes/{route_id}")
 @require_roles(*FLEET_MANAGERS)
-async def update_route(
-    request, route_id: UUID, data: RouteUpdateSchema
+def update_route(
+    request, org_id: UUID, route_id: UUID, data: RouteUpdateSchema
 ) -> dict:
     """Updates a route."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await update_route_service(route_id, org_id, data)
+        result = update_route_service(route_id, org_id, data)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -169,13 +166,12 @@ async def update_route(
         raise BadRequestException(str(e)) from e
 
 
-@router.delete("/routes/{route_id}")
+@router.delete("/organization/{org_id}/routes/{route_id}")
 @require_roles(R.ORG_ADMIN, R.MANAGEMENT)
-async def delete_route(request, route_id: UUID) -> dict:
+def delete_route(request, org_id: UUID, route_id: UUID) -> dict:
     """Deletes a route — Management and Org Admin only."""
     try:
-        org_id = request.auth.get("org_id")
-        await delete_route_service(route_id, org_id)
+        delete_route_service(route_id, org_id)
         return create_response(
             status_code=StatusCode.NO_CONTENT,
             message="Route deleted successfully.",
@@ -188,13 +184,13 @@ async def delete_route(request, route_id: UUID) -> dict:
 
 # ── Trucks ─────────────────────────────────────────────────
 
-@router.post("/trucks")
+@router.post("/organization/{org_id}/trucks")
 @require_roles(R.ORG_ADMIN, R.MANAGEMENT, R.LOGISTICS_OFFICER)
-async def create_truck(request, data: TruckCreateSchema) -> dict:
+@transaction.atomic
+def create_truck(request, org_id: UUID, data: TruckCreateSchema) -> dict:
     """Registers a new truck."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await create_truck_service(data, org_id)
+        result = create_truck_service(data, org_id)
         return create_response(status_code=StatusCode.CREATED, data=result)
     except ConflictException as e:
         raise ConflictException(str(e)) from e
@@ -202,30 +198,30 @@ async def create_truck(request, data: TruckCreateSchema) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/trucks")
+@router.get("/organization/{org_id}/trucks")
 @require_roles(*FLEET_VIEWERS)
-async def list_trucks(
-    request, status: str | None = None
+def list_trucks(
+    request,
+    org_id: UUID,
+    status: str | None = None
 ) -> dict:
     """
     Lists all trucks for the organization.
     Optionally filter by status via query param e.g. ?status=outbound
     """
     try:
-        org_id = request.auth.get("org_id")
-        result = await list_trucks_service(org_id, status)
+        result = list_trucks_service(org_id, status)
         return create_response(status_code=StatusCode.OK, data=result)
     except BadRequestException as e:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/trucks/{truck_id}")
+@router.get("/organization/{org_id}/trucks/{truck_id}")
 @require_roles(*FLEET_VIEWERS)
-async def get_truck(request, truck_id: UUID) -> dict:
+def get_truck(request, org_id: UUID, truck_id: UUID) -> dict:
     """Retrieves a single truck with current location."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await get_truck_service(truck_id, org_id)
+        result = get_truck_service(truck_id, org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -233,15 +229,14 @@ async def get_truck(request, truck_id: UUID) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/trucks/{truck_id}")
+@router.patch("/organization/{org_id}/trucks/{truck_id}")
 @require_roles(*FLEET_MANAGERS)
-async def update_truck(
-    request, truck_id: UUID, data: TruckUpdateSchema
+def update_truck(
+    request, org_id: UUID, truck_id: UUID, data: TruckUpdateSchema
 ) -> dict:
     """Updates truck details."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await update_truck_service(truck_id, org_id, data)
+        result = update_truck_service(truck_id, org_id, data)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -249,10 +244,10 @@ async def update_truck(
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/trucks/{truck_id}/status")
+@router.patch("/organization/{org_id}/trucks/{truck_id}/status")
 @require_roles(*STATUS_UPDATERS)
-async def update_truck_status(
-    request, truck_id: UUID, data: TruckStatusUpdateSchema
+def update_truck_status(
+    request, org_id: UUID, truck_id: UUID, data: TruckStatusUpdateSchema
 ) -> dict:
     """
     Manually overrides a truck status.
@@ -260,9 +255,9 @@ async def update_truck_status(
     RFID-triggered status changes go through the terminals app — not here.
     """
     try:
-        org_id = request.auth.get("org_id")
+
         user_id = request.auth.get("user_id")
-        result = await update_truck_status_service(
+        result = update_truck_status_service(
             truck_id, org_id, data, user_id
         )
         return create_response(status_code=StatusCode.OK, data=result)
@@ -272,13 +267,12 @@ async def update_truck_status(
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/trucks/{truck_id}/history")
+@router.get("/organization/{org_id}/trucks/{truck_id}/history")
 @require_roles(*FLEET_VIEWERS)
-async def get_truck_status_history(request, truck_id: UUID) -> dict:
+def get_truck_status_history(request, org_id: UUID, truck_id: UUID) -> dict:
     """Returns the full status change history for a truck."""
     try:
-        org_id = request.auth.get("org_id")
-        result = await get_truck_status_history_service(truck_id, org_id)
+        result = get_truck_status_history_service(truck_id, org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except NotFoundException as e:
         raise NotFoundException(str(e)) from e
@@ -286,16 +280,15 @@ async def get_truck_status_history(request, truck_id: UUID) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.delete("/trucks/{truck_id}")
+@router.delete("/organization/{org_id}/trucks/{truck_id}")
 @require_roles(R.ORG_ADMIN, R.MANAGEMENT)
-async def deactivate_truck(request, truck_id: UUID) -> dict:
+def deactivate_truck(request, org_id: UUID, truck_id: UUID) -> dict:
     """
     Decommissions a truck — sets is_active False and status to DECOMMISSIONED.
     Management and Org Admin only.
     """
     try:
-        org_id = request.auth.get("org_id")
-        await deactivate_truck_service(truck_id, org_id)
+        deactivate_truck_service(truck_id, org_id)
         return create_response(
             status_code=StatusCode.NO_CONTENT,
             message="Truck decommissioned successfully.",

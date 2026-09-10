@@ -1,6 +1,6 @@
 from ninja import ModelSchema, Schema
 
-from organization.models import Organizations, OrganizationSettings
+from organization.models import Organizations, OrganizationMember, OrganizationSettings
 from uuid import UUID
 from typing import Optional
 from datetime import datetime
@@ -8,6 +8,11 @@ from datetime import datetime
 class OrganizationOutSchema(ModelSchema):
     class Meta:
         model = Organizations
+        fields = "__all__"
+
+class OrganizationMembersSchema(Schema):
+    class Meta:
+        model = OrganizationMember
         fields = "__all__"
 
 

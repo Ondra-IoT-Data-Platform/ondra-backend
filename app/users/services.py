@@ -1,16 +1,17 @@
+# users/services.py
 from uuid import UUID
-from django.contrib.auth import get_user_model
-from django.contrib.auth.hashers import make_password
+from django.utils import timezone
+from django.db import transaction
+
 from config.exceptions import (
     BadRequestException,
     ConflictException,
     NotFoundException,
 )
-from users.models import Role, OfficeProfile, DriverProfile
+from users.models import User,  OfficeProfile, DriverProfile
 from users.schema import (
     UserCreateSchema,
     UserUpdateSchema,
-    UserRoleUpdateSchema,
     UserOutSchema,
     UserWithProfileOutSchema,
     OfficeProfileCreateSchema,
@@ -20,63 +21,181 @@ from users.schema import (
     DriverProfileUpdateSchema,
     DriverProfileOutSchema,
 )
+from access.models import TokenTypeChoices
+from access.auth_utils import OTokenManager
+from organization.models import Organizations
 
-User = get_user_model()
 
 
 # ── User services ──────────────────────────────────────────
 
-async def create_user_service(
+def create_user_service(
     data: UserCreateSchema,
-    organization_id: UUID,
 ) -> UserOutSchema:
     """
-    Creates a new user.
-    organization_id comes from the authenticated user's token —
-    never from client input.
+    Creates a new user using an organization onboarding token.
+    The token proves the user is authorized to join the organization.
     """
     try:
-        exists = await User.objects.filter(
-            email=data.email
-        ).aexists()
-        if exists:
-            raise ConflictException(
-                f"A user with email '{data.email}' already exists"
-            ) from None
-
-        role = await Role.objects.aget(
-            id=data.role_id,
-            organization_id=organization_id,
+        # Validate the organization token FIRST
+        token_obj = OTokenManager.verify_otoken(
+            data.organization_token,
+            TokenTypeChoices.USER_ONBOARDING
         )
 
-        user = await User.objects.acreate(
-            email=data.email,
-            password=make_password(data.password),
-            organization_id=organization_id,
+        if not token_obj:
+            raise NotFoundException(
+                "Invalid or expired organization onboarding token"
+            )
+
+        # Get the organization from the token
+        organization = token_obj.organization
+        if not organization:
+            raise BadRequestException("Token is not associated with an organization")
+
+        # Check if user already exists
+        existing_user = User.objects.filter(email=data.email).first()
+
+        if existing_user:
+            # User exists - check if they're already a member
+            if organization.members.filter(user=existing_user, is_active=True).exists():
+                raise ConflictException(
+                    f"User with email '{data.email}' is already a member of this organization"
+                )
+
+            # Use existing user
+            user = existing_user
+            is_new_user = False
+        else:
+            # Create new user
+            user = User.objects.create_user(
+                email=data.email,
+                password=data.password
+            )
+            is_new_user = True
+
+        # Get metadata from token
+        metadata = token_obj.metadata or {}
+        role = metadata.get('role', 'org_admin')
+
+        # Add user to organization (if not already a member)
+        with transaction.atomic():
+            # Check again if user is already a member (for existing users)
+            if not organization.members.filter(user=user, is_active=True).exists():
+                organization.members.create(
+                    user=user,
+                    role=role,
+                    joined_at=timezone.now()
+                )
+
+            # Mark the token as used
+            OTokenManager.mark_used(token_obj)
+
+            # Associate token with user
+            token_obj.user = user
+            token_obj.save(update_fields=['user'])
+
+        # Return user response
+        return UserOutSchema(
+            id=user.id,
+            email=user.email,
+            is_active=user.is_active,
+            organization_id=organization.id,
             role=role,
+            created_at=user.created_at,
+            updated_at=user.updated_at
         )
 
-        # Reload with select_related so schema resolver
-        # can access user.role.name without extra query
-        user = await (
-            User.objects
-            .select_related("role", "organization")
-            .aget(id=user.id)
-        )
-
-        return UserOutSchema.from_orm(user)
-
-    except Role.DoesNotExist:
-        raise NotFoundException(
-            "Role not found in this organization"
-        ) from None
     except ConflictException:
         raise
+    except NotFoundException:
+        raise
+    except BadRequestException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to create user: {str(e)}")
 
 
-async def list_users_service(
+
+
+def create_user_from_invitation_service(
+    data: UserCreateSchema,
+) -> UserOutSchema:
+    """
+    Creates a new user from an invitation token.
+    The user is added to the organization with the role specified in the token.
+    """
+    try:
+        # Check if user already exists
+        if User.objects.filter(email=data.email).exists():
+            raise ConflictException(
+                f"A user with email '{data.email}' already exists"
+            )
+
+        # Validate the invitation token
+        token_obj = OTokenManager.verify_otoken(
+            data.organization_token,
+            TokenTypeChoices.USER_ONBOARDING
+        )
+
+        if not token_obj:
+            raise NotFoundException(
+                "Invalid or expired invitation token"
+            )
+
+        # Get the organization from the token
+        organization = token_obj.organization
+        if not organization:
+            raise BadRequestException("Token is not associated with an organization")
+
+        # Get role from token metadata
+        # metadata = token_obj.metadata or {}
+        # role = metadata.get('role', 'org_admin')
+
+        # Create the user with transaction
+        with transaction.atomic():
+            # Create user
+            user = User.objects.create_user(
+                email=data.email,
+                password=data.password
+            )
+
+            # Add user to organization
+            organization.members.create(
+                user=user,
+                role=data.role,
+                joined_at=timezone.now()
+            )
+
+            # Mark the token as used
+            OTokenManager.mark_used(token_obj)
+
+            # Associate token with user
+            token_obj.user = user
+            token_obj.save(update_fields=['user'])
+
+        # Return user response
+        return UserOutSchema(
+            id=user.id,
+            email=user.email,
+            is_active=user.is_active,
+            organization_id=organization.id,
+            role=data.role,
+            created_at=user.created_at,
+            updated_at=user.updated_at
+        )
+
+    except ConflictException:
+        raise
+    except NotFoundException:
+        raise
+    except BadRequestException:
+        raise
+    except Exception as e:
+        raise BadRequestException(f"Failed to create user from invitation: {str(e)}")
+
+
+def list_users_service(
     organization_id: UUID,
 ) -> list[UserOutSchema]:
     """
@@ -84,21 +203,48 @@ async def list_users_service(
     Always scoped to the authenticated user's organization.
     """
     try:
+        # Validate organization exists
+        try:
+            organization = Organizations.objects.get(id=organization_id, is_active=True)
+        except Organizations.DoesNotExist:
+            raise NotFoundException("Organization not found")
+
         users = (
             User.objects
-            .filter(organization_id=organization_id)
-            .select_related("role", "organization")
+            .filter(
+                organization_memberships__organization_id=organization_id,
+                organization_memberships__is_active=True,
+                is_active=True
+            )
+            .select_related('organization_memberships')
             .order_by("created_at")
+            .distinct()
         )
+
         return [
-            UserOutSchema.from_orm(user)
-            async for user in users
+            UserOutSchema(
+                id=user.id,
+                email=user.email,
+                is_active=user.is_active,
+                organization_id=organization_id,
+                role=user.organization_memberships.filter(
+                    organization_id=organization_id
+                ).first().role if user.organization_memberships.filter(
+                    organization_id=organization_id
+                ).exists() else None,
+                created_at=user.created_at,
+                updated_at=user.updated_at
+            )
+            for user in users
         ]
+
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to list users: {str(e)}")
 
 
-async def get_user_service(
+def get_user_service(
     user_id: UUID,
     organization_id: UUID,
 ) -> UserWithProfileOutSchema:
@@ -107,23 +253,39 @@ async def get_user_service(
     Scoped to organization.
     """
     try:
-        user = await (
-            User.objects
-            .select_related("role", "organization")
-            .aget(id=user_id, organization_id=organization_id)
-        )
+        # Validate organization exists
+        try:
+            organization = Organizations.objects.get(id=organization_id, is_active=True)
+        except Organizations.DoesNotExist:
+            raise NotFoundException("Organization not found")
+
+        # Get user with organization membership
+        user = User.objects.filter(
+            id=user_id,
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True,
+            is_active=True
+        ).select_related('organization_memberships').first()
+
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Get the member role
+        member = user.organization_memberships.filter(
+            organization_id=organization_id
+        ).first()
 
         office_profile = None
         driver_profile = None
 
         try:
-            profile = await OfficeProfile.objects.aget(user=user)
+            profile = OfficeProfile.objects.get(user=user)
             office_profile = OfficeProfileOutSchema.from_orm(profile)
         except OfficeProfile.DoesNotExist:
             pass
 
         try:
-            profile = await DriverProfile.objects.aget(user=user)
+            profile = DriverProfile.objects.get(user=user)
             driver_profile = DriverProfileOutSchema.from_orm(profile)
         except DriverProfile.DoesNotExist:
             pass
@@ -131,99 +293,144 @@ async def get_user_service(
         return UserWithProfileOutSchema(
             id=user.id,
             email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            phone=user.phone,
             is_active=user.is_active,
-            organization_id=user.organization_id,
-            role_name=user.role.name if user.role else None,
+            organization_id=organization_id,
+            role=member.role if member else None,
             created_at=user.created_at,
             updated_at=user.updated_at,
             office_profile=office_profile,
             driver_profile=driver_profile,
         )
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to get user: {str(e)}")
 
 
-async def update_user_service(
+def update_user_service(
     user_id: UUID,
     organization_id: UUID,
     data: UserUpdateSchema,
 ) -> UserOutSchema:
     """
-    Updates a user's email or active status.
+    Updates a user's details.
     Scoped to organization.
     """
     try:
-        user = await (
-            User.objects
-            .select_related("role", "organization")
-            .aget(id=user_id, organization_id=organization_id)
-        )
+        # Validate organization exists
+        try:
+            organization = Organizations.objects.get(id=organization_id, is_active=True)
+        except Organizations.DoesNotExist:
+            raise NotFoundException("Organization not found")
 
+        # Get user
+        user = User.objects.filter(
+            id=user_id,
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
+
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Update user fields
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
-            setattr(user, field, value)
-        await user.asave()
+            if field != 'password' and hasattr(user, field):
+                setattr(user, field, value)
 
-        # Reload after save to get fresh state
-        user = await (
-            User.objects
-            .select_related("role", "organization")
-            .aget(id=user.id)
-        )
-        return UserOutSchema.from_orm(user)
+        if 'password' in update_data and update_data['password']:
+            user.set_password(update_data['password'])
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
-    except Exception as e:
-        raise BadRequestException(str(e)) from e
+        user.save()
 
+        # Get the member role
+        member = user.organization_memberships.filter(
+            organization_id=organization_id
+        ).first()
 
-async def update_user_role_service(
-    user_id: UUID,
-    organization_id: UUID,
-    data: UserRoleUpdateSchema,
-) -> UserOutSchema:
-    """
-    Changes a user's role.
-    Role must belong to the same organization.
-    Org admin only.
-    """
-    try:
-        user = await (
-            User.objects
-            .select_related("role", "organization")
-            .aget(id=user_id, organization_id=organization_id)
-        )
-
-        role = await Role.objects.aget(
-            id=data.role_id,
+        return UserOutSchema(
+            id=user.id,
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            phone=user.phone,
+            is_active=user.is_active,
             organization_id=organization_id,
+            role=member.role if member else None,
+            created_at=user.created_at,
+            updated_at=user.updated_at
         )
 
-        user.role = role
-        await user.asave()
-
-        user = await (
-            User.objects
-            .select_related("role", "organization")
-            .aget(id=user.id)
-        )
-        return UserOutSchema.from_orm(user)
-
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
-    except Role.DoesNotExist:
-        raise NotFoundException(
-            "Role not found in this organization"
-        ) from None
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to update user: {str(e)}")
 
 
-async def deactivate_user_service(
+# def update_user_role_service(
+#     user_id: UUID,
+#     organization_id: UUID,
+#     data: UserRoleUpdateSchema,
+# ) -> UserOutSchema:
+#     """
+#     Changes a user's role.
+#     Role must belong to the same organization.
+#     Org admin only.
+#     """
+#     try:
+#         # Validate organization exists
+#         try:
+#             organization = Organizations.objects.get(id=organization_id, is_active=True)
+#         except Organizations.DoesNotExist:
+#             raise NotFoundException("Organization not found")
+
+#         # Get user
+#         user = User.objects.filter(
+#             id=user_id,
+#             organization_memberships__organization_id=organization_id,
+#             organization_memberships__is_active=True
+#         ).first()
+
+#         if not user:
+#             raise NotFoundException("User not found in this organization")
+
+#         # Get the member
+#         member = user.organization_memberships.filter(
+#             organization_id=organization_id
+#         ).first()
+
+#         if not member:
+#             raise NotFoundException("User is not a member of this organization")
+
+#         # Update role
+#         member.role = data.role
+#         member.save(update_fields=['role'])
+
+#         return UserOutSchema(
+#             id=user.id,
+#             email=user.email,
+#             first_name=user.first_name,
+#             last_name=user.last_name,
+#             phone=user.phone,
+#             is_active=user.is_active,
+#             organization_id=organization_id,
+#             role=member.role,
+#             created_at=user.created_at,
+#             updated_at=user.updated_at
+#         )
+
+#     except NotFoundException:
+#         raise
+#     except Exception as e:
+#         raise BadRequestException(f"Failed to update user role: {str(e)}")
+
+
+def deactivate_user_service(
     user_id: UUID,
     organization_id: UUID,
 ) -> None:
@@ -232,22 +439,40 @@ async def deactivate_user_service(
     Scoped to organization.
     """
     try:
-        user = await User.objects.aget(
-            id=user_id,
-            organization_id=organization_id,
-        )
-        user.is_active = False
-        await user.asave()
+        # Validate organization exists
+        try:
+            organization = Organizations.objects.get(id=organization_id, is_active=True)
+        except Organizations.DoesNotExist:
+            raise NotFoundException("Organization not found")
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
+        # Get user
+        user = User.objects.filter(
+            id=user_id,
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
+
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Deactivate user
+        user.is_active = False
+        user.save(update_fields=['is_active'])
+
+        # Deactivate all memberships
+        user.organization_memberships.filter(
+            organization_id=organization_id
+        ).update(is_active=False)
+
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to deactivate user: {str(e)}")
 
 
 # ── Office profile services ────────────────────────────────
 
-async def create_office_profile_service(
+def create_office_profile_service(
     user_id: UUID,
     organization_id: UUID,
     data: OfficeProfileCreateSchema,
@@ -257,34 +482,39 @@ async def create_office_profile_service(
     User must belong to the caller's organization.
     """
     try:
-        user = await User.objects.aget(
+        # Validate user belongs to organization
+        user = User.objects.filter(
             id=user_id,
-            organization_id=organization_id,
-        )
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
 
-        exists = await OfficeProfile.objects.filter(
-            user=user
-        ).aexists()
-        if exists:
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Check if profile already exists
+        if OfficeProfile.objects.filter(user=user).exists():
             raise ConflictException(
                 "Office profile already exists for this user"
-            ) from None
+            )
 
-        profile = await OfficeProfile.objects.acreate(
+        # Create profile
+        profile = OfficeProfile.objects.create(
             user=user,
-            **data.dict(exclude_unset=True),
+            **data.dict()
         )
+
         return OfficeProfileOutSchema.from_orm(profile)
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
     except ConflictException:
         raise
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to create office profile: {str(e)}")
 
 
-async def update_office_profile_service(
+def update_office_profile_service(
     user_id: UUID,
     organization_id: UUID,
     data: OfficeProfileUpdateSchema,
@@ -294,52 +524,69 @@ async def update_office_profile_service(
     User must belong to the caller's organization.
     """
     try:
-        user = await User.objects.aget(
+        # Validate user belongs to organization
+        user = User.objects.filter(
             id=user_id,
-            organization_id=organization_id,
-        )
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
 
-        profile = await OfficeProfile.objects.aget(user=user)
+        if not user:
+            raise NotFoundException("User not found in this organization")
 
+        # Get profile
+        try:
+            profile = OfficeProfile.objects.get(user=user)
+        except OfficeProfile.DoesNotExist:
+            raise NotFoundException("Office profile not found")
+
+        # Update profile
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(profile, field, value)
-        await profile.asave()
+        profile.save()
 
         return OfficeProfileOutSchema.from_orm(profile)
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
-    except OfficeProfile.DoesNotExist:
-        raise NotFoundException("Office profile not found") from None
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to update office profile: {str(e)}")
 
 
-async def get_office_profile_service(
+def get_office_profile_service(
     user_id: UUID,
     organization_id: UUID,
 ) -> OfficeProfileOutSchema:
     """Retrieves the office profile for a user."""
     try:
-        user = await User.objects.aget(
+        # Validate user belongs to organization
+        user = User.objects.filter(
             id=user_id,
-            organization_id=organization_id,
-        )
-        profile = await OfficeProfile.objects.aget(user=user)
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
+
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Get profile
+        try:
+            profile = OfficeProfile.objects.get(user=user)
+        except OfficeProfile.DoesNotExist:
+            raise NotFoundException("Office profile not found")
+
         return OfficeProfileOutSchema.from_orm(profile)
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
-    except OfficeProfile.DoesNotExist:
-        raise NotFoundException("Office profile not found") from None
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to get office profile: {str(e)}")
 
 
 # ── Driver profile services ────────────────────────────────
 
-async def create_driver_profile_service(
+def create_driver_profile_service(
     user_id: UUID,
     organization_id: UUID,
     data: DriverProfileCreateSchema,
@@ -350,34 +597,39 @@ async def create_driver_profile_service(
     A user should only have one driver profile.
     """
     try:
-        user = await User.objects.aget(
+        # Validate user belongs to organization
+        user = User.objects.filter(
             id=user_id,
-            organization_id=organization_id,
-        )
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
 
-        exists = await DriverProfile.objects.filter(
-            user=user
-        ).aexists()
-        if exists:
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Check if profile already exists
+        if DriverProfile.objects.filter(user=user).exists():
             raise ConflictException(
                 "Driver profile already exists for this user"
-            ) from None
+            )
 
-        profile = await DriverProfile.objects.acreate(
+        # Create profile
+        profile = DriverProfile.objects.create(
             user=user,
-            **data.dict(exclude_unset=True),
+            **data.dict()
         )
+
         return DriverProfileOutSchema.from_orm(profile)
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
     except ConflictException:
         raise
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to create driver profile: {str(e)}")
 
 
-async def update_driver_profile_service(
+def update_driver_profile_service(
     user_id: UUID,
     organization_id: UUID,
     data: DriverProfileUpdateSchema,
@@ -387,44 +639,61 @@ async def update_driver_profile_service(
     User must belong to the caller's organization.
     """
     try:
-        user = await User.objects.aget(
+        # Validate user belongs to organization
+        user = User.objects.filter(
             id=user_id,
-            organization_id=organization_id,
-        )
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
 
-        profile = await DriverProfile.objects.aget(user=user)
+        if not user:
+            raise NotFoundException("User not found in this organization")
 
+        # Get profile
+        try:
+            profile = DriverProfile.objects.get(user=user)
+        except DriverProfile.DoesNotExist:
+            raise NotFoundException("Driver profile not found")
+
+        # Update profile
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(profile, field, value)
-        await profile.asave()
+        profile.save()
 
         return DriverProfileOutSchema.from_orm(profile)
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
-    except DriverProfile.DoesNotExist:
-        raise NotFoundException("Driver profile not found") from None
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to update driver profile: {str(e)}")
 
 
-async def get_driver_profile_service(
+def get_driver_profile_service(
     user_id: UUID,
     organization_id: UUID,
 ) -> DriverProfileOutSchema:
     """Retrieves the driver profile for a user."""
     try:
-        user = await User.objects.aget(
+        # Validate user belongs to organization
+        user = User.objects.filter(
             id=user_id,
-            organization_id=organization_id,
-        )
-        profile = await DriverProfile.objects.aget(user=user)
+            organization_memberships__organization_id=organization_id,
+            organization_memberships__is_active=True
+        ).first()
+
+        if not user:
+            raise NotFoundException("User not found in this organization")
+
+        # Get profile
+        try:
+            profile = DriverProfile.objects.get(user=user)
+        except DriverProfile.DoesNotExist:
+            raise NotFoundException("Driver profile not found")
+
         return DriverProfileOutSchema.from_orm(profile)
 
-    except User.DoesNotExist:
-        raise NotFoundException("User not found") from None
-    except DriverProfile.DoesNotExist:
-        raise NotFoundException("Driver profile not found") from None
+    except NotFoundException:
+        raise
     except Exception as e:
-        raise BadRequestException(str(e)) from e
+        raise BadRequestException(f"Failed to get driver profile: {str(e)}")

@@ -1,3 +1,12 @@
 from django.contrib import admin
+from dispatch.models import Dispatch, TripMetadata
 
-# Register your models here.
+
+@admin.register(Dispatch)
+class DispatchAdmin(admin.ModelAdmin):
+    pass
+
+
+@admin.register(TripMetadata)
+class TripMetadataAdmin(admin.ModelAdmin):
+    pass

@@ -39,10 +39,11 @@ class TerminalOutSchema(ModelSchema):
 
 ################# Gates #################
 
-class GateCreateSchema(ModelSchema):
-    class Meta:
-        model = Gates
-        fields = ["terminal", "name", "gate_type"]
+class GateCreateSchema(Schema):
+    terminal_id: int
+    name: str
+    gate_type: str = "entry"
+
 
 
 class GateUpdateSchema(ModelSchema):

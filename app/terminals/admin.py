@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.db.models.query import QuerySet
 from typing import Any
 
-admin.site.register(Terminals)
+@admin.register(Terminals)
 class TerminalAdmin(admin.ModelAdmin):
     list_display = ["id", "name", "organization", "created_at"]
     search_fields = ("name",)
@@ -17,7 +17,7 @@ class TerminalAdmin(admin.ModelAdmin):
     make_inactive.short_description = "Mark selected terminals as inactive"
 
 
-admin.site.register(Gates)
+@admin.register(Gates)
 class GateAdmin(admin.ModelAdmin):
     list_display = ["id", "name", "terminal", "gate_type"]
     search_fields = ("name",)

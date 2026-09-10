@@ -1,19 +1,17 @@
 from uuid import UUID
 from ninja import Router
-from access.auth import JWTAuthBearer
+from access.auth_utils import JWTAuthBearer
 from config.exceptions import (
     BadRequestException,
     ConflictException,
     ForbiddenException,
     NotFoundException,
 )
-from config.permissions import require_roles
+from config.permissions import require_roles, require_organization_member_or_superuser
 from config.schema import StatusCode, create_response
-from users.models import Role
 from users.schema import (
     UserCreateSchema,
     UserUpdateSchema,
-    UserRoleUpdateSchema,
     OfficeProfileCreateSchema,
     OfficeProfileUpdateSchema,
     DriverProfileCreateSchema,
@@ -24,7 +22,8 @@ from users.services import (
     list_users_service,
     get_user_service,
     update_user_service,
-    update_user_role_service,
+    # list_user_roles_service,
+    # update_user_role_service,
     deactivate_user_service,
     create_office_profile_service,
     update_office_profile_service,
@@ -33,27 +32,36 @@ from users.services import (
     update_driver_profile_service,
     get_driver_profile_service,
 )
+from organization.models import OrganizationMember
 
-R = Role.RoleName
+
 router = Router(tags=["Users"], auth=JWTAuthBearer())
 
-USER_MANAGERS = [R.ORG_ADMIN, R.MANAGEMENT]
+
+R = OrganizationMember.RoleChoices
+
+USER_MANAGERS = [R.ORG_ADMIN, R.MANAGEMENT, "SUPERUSER"]
 
 
 # ── User endpoints ─────────────────────────────────────────
 
+
+
+
 @router.post("/users")
 @require_roles(*USER_MANAGERS)
-async def create_user(request, data: UserCreateSchema) -> dict:
+def create_user(request, data: UserCreateSchema) -> dict:
     """
     Creates a new user within the authenticated user's organization.
     Organization is always inferred from token — never from client input.
     """
     try:
-        org_id = request.auth.get("org_id")
-        result = await create_user_service(data, org_id)
+
+        result = create_user_service(data)
+        # print(org_id)
         return create_response(
             status_code=StatusCode.CREATED,
+            message="User created successfully.",
             data=result,
         )
     except ConflictException as e:
@@ -116,27 +124,27 @@ async def update_user(request, user_id: UUID, data: UserUpdateSchema) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/users/{user_id}/role")
-@require_roles(R.ORG_ADMIN)
-async def update_user_role(
-    request, user_id: UUID, data: UserRoleUpdateSchema
-) -> dict:
-    """
-    Changes a user's role.
-    Org admin only — management cannot reassign roles.
-    Role must belong to the same organization.
-    """
-    try:
-        org_id = request.auth.get("org_id")
-        result = await update_user_role_service(user_id, org_id, data)
-        return create_response(
-            status_code=StatusCode.OK,
-            data=result,
-        )
-    except NotFoundException as e:
-        raise NotFoundException(str(e)) from e
-    except BadRequestException as e:
-        raise BadRequestException(str(e)) from e
+# @router.patch("/users/{user_id}/role")
+# @require_roles(R.ORG_ADMIN)
+# async def update_user_role(
+#     request, user_id: UUID, data: UserRoleUpdateSchema
+# ) -> dict:
+#     """
+#     Changes a user's role.
+#     Org admin only — management cannot reassign roles.
+#     Role must belong to the same organization.
+#     """
+#     try:
+#         org_id = request.auth.get("org_id")
+#         result = await update_user_role_service(user_id, org_id, data)
+#         return create_response(
+#             status_code=StatusCode.OK,
+#             data=result,
+#         )
+#     except NotFoundException as e:
+#         raise NotFoundException(str(e)) from e
+#     except BadRequestException as e:
+#         raise BadRequestException(str(e)) from e
 
 
 @router.delete("/users/{user_id}")

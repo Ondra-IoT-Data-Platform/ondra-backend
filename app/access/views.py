@@ -1,176 +1,230 @@
-from config.schema import StatusCode, StatusMessage, create_response
+# access/views.py
+from uuid import UUID
+from typing import Optional
+
+from config.schema import (StatusCode, StatusMessage, create_response, BaseResponseSchema)
+from config.permissions import require_roles
 from access.schema import (
     LoginSchema,
     LoginResponseSchema,
+    LogoutSchema,
     RefreshTokenSchema,
-    VerificationTokenSchema,
-    VerificationTokenUpdateSchema,
-    VerifyEmailSchema,
-    CustomTokenObtainPairInputSchema,
-    CustomTokenObtainPairOutputSchema,
+    OTPRequestSchema,
+    OTPVerifySchema,
+    OTPResponseSchema,
+    OnboardingTokenGenerateSchema,
+    OnboardingTokenResponseSchema,
+    InvitationTokenGenerateSchema,
+    InvitationTokenResponseSchema,
+    TokenValidationSchema,
+    TokenStatusResponseSchema,
+    TokenRevokeSchema,
+    TokenExtendSchema,
 )
 
-from access.services import (
-    create_email_verify_token_service,
-    get_verification_token_service,
-    login_service,
-    refresh_token_service,
-    update_verification_token_service,
-    verify_email_service,
-)
+from access.auth_services import AuthService
+from access.token_services import TokenService
+from access.auth_utils import JWTAuthBearer
 
+from django.db import transaction
 from ninja import Router
 from config.exceptions import (
     NotFoundException,
     UnauthorizedException,
+    BadRequestException,
 )
-from ninja_jwt.controller import TokenObtainPairController
-from ninja_jwt.schema import TokenRefreshInputSchema, TokenRefreshOutputSchema
+from users.schema import UserOutSchema
+
 
 router = Router(tags=["Access"])
+USER_MANAGERS = ["SUPERUSER", "ORG_ADMIN", "MANAGEMENT"]
 
 
+# ── Authentication endpoints ──────────────────────────────────
 
 @router.post(
     "/login",
-    response=CustomTokenObtainPairOutputSchema,
+    response=BaseResponseSchema,
     auth=None,
-    url_name="token_obtain_pair",
+    summary="Login with Email and Password",
 )
-async def login(request, data: CustomTokenObtainPairInputSchema):
-    """
-    Login endpoint.
-    ninja-jwt handles authentication and token generation.
-    custom schema adds org_id, role_id, role_name claims.
-    """
-    user = data._user
+def login(request, payload: LoginSchema):
+    """Login user and return access/refresh tokens."""
+    device_info = request.META.get("HTTP_USER_AGENT")
+    ip_address = request.META.get("REMOTE_ADDR")
 
-    token = await data.output_schema()  # ninja-jwt builds the token pair
+    result = AuthService.login(
+        payload=payload,
+        device_info=device_info,
+        ip_address=ip_address,
+    )
 
-    return LoginSchema(
-        access=token.access,
-        refresh=token.refresh,
-        role=user.role.name if user.role else None,
-        organization=user.organization.name if user.organization else None,
+    return create_response(
+        data={
+            "access_token": result.access_token,
+            "refresh_token": result.refresh_token,
+            "expires_in": result.expires_in,
+            "user": UserOutSchema.from_orm(result.user).dict(),
+        },
+        message="Login successful.",
     )
 
 
 @router.post(
-    "/refresh",
-    response=TokenRefreshOutputSchema,
+    "/token/refresh",
+    response=BaseResponseSchema,
     auth=None,
-    url_name="token_refresh",
+    summary="Refresh access token",
 )
-async def refresh_token(request, data: TokenRefreshInputSchema):
+@transaction.atomic()
+def refresh_token(request, payload: RefreshTokenSchema):
+    """Refresh access token using refresh token."""
+    result = AuthService.refresh_token(payload.refresh_token)
+    return create_response(
+        data=result,
+        message="Token refreshed successfully.",
+    )
+
+
+@router.post(
+    "/logout",
+    response=BaseResponseSchema,
+    auth=JWTAuthBearer(),
+    summary="Logout current session",
+)
+@transaction.atomic()
+def logout(request, payload: LogoutSchema):
+    """Logout user by revoking their session."""
+    AuthService.logout(payload.refresh_token)
+    return create_response(
+        data=None,
+        message="Logged out successfully.",
+    )
+
+
+# ── Onboarding Token endpoints ──────────────────────────────
+
+@router.post(
+    "/onboarding/generate-token",
+    response=BaseResponseSchema,
+    auth=JWTAuthBearer(),
+    summary="Generate an onboarding token for a new user",
+)
+@require_roles("SUPERUSER", "ORG_ADMIN")
+@transaction.atomic()
+def generate_onboarding_token(request, payload: OnboardingTokenGenerateSchema):
     """
-    Refresh endpoint.
-    ninja-jwt handles token rotation and blacklisting automatically.
+    Generate an onboarding token for a new user.
+    The token is signed with the organization and returned to the browser.
     """
-    return await data.output_schema()
-
-# @router.post("/login")
-# async def login(data: LoginSchema) -> dict[str, str]:
-#     """Logs in user"""
-#     try:
-#         result = await login_service(data)
-#         return create_response(
-#             status_code=StatusCode.SUCCESS,
-#             message=StatusMessage.SUCCESS,
-#             data=result,
-#         )
-#     except UnauthorizedException as e:
-#         raise UnauthorizedException(str(e)) from e
-
-
-# @router.post("/refresh")
-# async def refresh_token(data: RefreshTokenSchema) -> dict[str, str]:
-#     """Refreshes access token"""
-#     try:
-#         result = await refresh_token_service(data)
-#         return create_response(
-#             status_code=StatusCode.SUCCESS,
-#             message=StatusMessage.SUCCESS,
-#             data=result,
-#         )
-#     except UnauthorizedException as e:
-#         raise UnauthorizedException(str(e)) from e
-
-
-@router.get("/token/")
-async def get_verification_token(
-    token_id: int | None = None,
-    token_type: str | None = None,
-    user_id: int | None = None,
-) -> dict[str, str]:
-    """Gets a verification token for the user"""
     try:
-        result = await get_verification_token_service(
-            token_id=token_id, token_type=token_type, user_id=user_id
-        )
+        result = TokenService.generate_organization_onboarding_token(payload)
+
         return create_response(
-            status_code=StatusCode.SUCCESS,
-            message=StatusMessage.SUCCESS,
-            data=result,
+            data=result.dict(),
+            message="Onboarding token generated successfully.",
+            status_code=StatusCode.CREATED
         )
     except NotFoundException as e:
-        raise NotFoundException(str(e)) from e
+        raise NotFoundException(str(e))
+    except BadRequestException as e:
+        raise BadRequestException(str(e))
+    except Exception as e:
+        raise BadRequestException(f"Failed to generate onboarding token: {str(e)}")
 
 
-@router.post("/email/token")
-async def create_email_verification_token(
-    email: str,
-) -> dict[str, str]:
-    """Creates an email verification token"""
+@router.post(
+    "/onboarding/extend-token",
+    response=BaseResponseSchema,
+    auth=JWTAuthBearer(),
+    summary="Extend onboarding token expiry",
+)
+@require_roles("SUPERUSER", "ORG_ADMIN")
+def extend_onboarding_token(request, payload: TokenExtendSchema):
+    """
+    Extend the expiry of an onboarding token.
+    """
     try:
-        result = await create_email_verify_token_service(email)
+        token_obj = TokenService.extend_token_expiry(payload)
         return create_response(
-            status_code=StatusCode.SUCCESS,
-            message=StatusMessage.SUCCESS,
-            data=result,
+            data={
+                "token_id": str(token_obj.id),
+                "new_expires_at": token_obj.expires_at.isoformat(),
+            },
+            message="Token expiry extended successfully.",
+            status_code=StatusCode.SUCCESS
         )
     except NotFoundException as e:
-        raise NotFoundException(str(e)) from e
+        raise NotFoundException(str(e))
+    except BadRequestException as e:
+        raise BadRequestException(str(e))
+    except Exception as e:
+        raise BadRequestException(f"Failed to extend token: {str(e)}")
 
 
-@router.post("/email/token/verify")
-async def verify_email_token(data: VerifyEmailSchema) -> dict[str, str]:
-    """Verifies an email verification token"""
+# ── Invitation Token endpoints ──────────────────────────────
+
+@router.post(
+    "/invitations/generate-token",
+    response=BaseResponseSchema,
+    auth=JWTAuthBearer(),
+    summary="Generate an invitation token",
+)
+@require_roles("SUPERUSER", "ORG_ADMIN")
+def generate_invitation_token(request, payload: InvitationTokenGenerateSchema):
+    """
+    Generate an invitation token for a new user to join an organization.
+    """
     try:
-        result = await verify_email_service(data)
+        result = TokenService.generate_organization_invitation_token(payload)
+
         return create_response(
-            status_code=StatusCode.SUCCESS,
-            message=StatusMessage.SUCCESS,
-            data=result,
+            data=result.dict(),
+            message="Invitation token generated successfully.",
+            status_code=StatusCode.CREATED
         )
     except NotFoundException as e:
-        raise NotFoundException(str(e)) from e
+        raise NotFoundException(str(e))
+    except BadRequestException as e:
+        raise BadRequestException(str(e))
+    except Exception as e:
+        raise BadRequestException(f"Failed to generate invitation token: {str(e)}")
 
 
-@router.post("/verification/token")
-async def create_verification_token(data: VerificationTokenSchema) -> dict[str, str]:
-    """Creates a verification token"""
-    try:
-        result = await create_verification_token(data)
-        return create_response(
-            status_code=StatusCode.SUCCESS,
-            message=StatusMessage.SUCCESS,
-            data=result,
-        )
-    except NotFoundException as e:
-        raise NotFoundException(str(e)) from e
 
 
-@router.patch("/verification/token")
-async def update_verification_token(
-    data: VerificationTokenUpdateSchema,
-) -> dict[str, str]:
-    """Updates a verification token"""
-    try:
-        result = await update_verification_token_service(data)
-        return create_response(
-            status_code=StatusCode.SUCCESS,
-            message=StatusMessage.SUCCESS,
-            data=result,
-        )
-    except NotFoundException as e:
-        raise NotFoundException(str(e)) from e
+# # ── OTP endpoints ────────────────────────────────────────────
+
+# @router.post(
+#     "/otp/request",
+#     response=BaseResponseSchema,
+#     auth=JWTAuthBearer(),
+#     summary="Request an OTP",
+# )
+# @transaction.atomic()
+# def request_otp(request, payload: OTPRequestSchema):
+#     """Request an OTP for verification."""
+#     otp = OTPService.request_otp(user=request.user, purpose=payload.purpose)
+#     return create_response(
+#         data={"expires_in": 300, "otp": otp},
+#         message="OTP sent to your registered phone number.",
+#     )
+
+
+# @router.post(
+#     "/otp/verify",
+#     response=BaseResponseSchema,
+#     auth=None,
+#     summary="Verify OTP for account verification",
+# )
+# def verify_otp(request, payload: OTPVerifySchema):
+#     """Verify OTP for account verification."""
+#     OTPService.verify_otp(
+#         phone_number=payload.phone_number,
+#         token=payload.token,
+#         purpose=payload.purpose,
+#     )
+#     return create_response(
+#         data={"verified": True},
+#         message="OTP verified successfully.",
+#     )

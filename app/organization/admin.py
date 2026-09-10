@@ -3,7 +3,7 @@ from typing import Any
 from django.contrib import admin
 from django.db.models.query import QuerySet
 
-from organization.models import Organizations
+from organization.models import Organizations, OrganizationMember, OrganizationSettings
 
 
 @admin.register(Organizations)
@@ -18,3 +18,12 @@ class OrganizationsAdmin(admin.ModelAdmin):  # type = ignore[type-arg]
         queryset.update(is_active=False)
 
     make_inactive.short_description = "Mark selected organizations as inactive"
+
+
+
+@admin.register(OrganizationMember)
+class OrganizationMemberAdmin(admin.ModelAdmin):
+    list_display = ["id", "user__email", "role", "joined_at"]
+    search_fields = ("user__email",)
+    list_filter = ["is_active"]
+    ordering = ("-joined_at",)

@@ -65,7 +65,7 @@ def create_response(
     status_code: StatusCode = StatusCode.OK,
     message: str | None = None,
 ) -> BaseResponseSchema[DataT]:
-    if status_code == StatusCode.OK:
+    if status_code in (StatusCode.OK, StatusCode.CREATED, StatusCode.NO_CONTENT):
         return BaseResponseSchema(
             status=status_code.value,
             message=message or MESSAGES[StatusMessage.SUCCESS],
@@ -73,13 +73,13 @@ def create_response(
             error=None,
         )
 
-    if status_code == StatusCode.CREATED:
-        return BaseResponseSchema(
-            status=status_code.value,
-            message=message or MESSAGES[StatusMessage.SUCCESS],
-            data=data,
-            error=None,
-        )
+    # if status_code == StatusCode.CREATED:
+    #     return BaseResponseSchema(
+    #         status=status_code.value,
+    #         message=message or MESSAGES[StatusMessage.SUCCESS],
+    #         data=data,
+    #         error=None,
+    #     )
 
     return BaseResponseSchema(
         status=status_code.value,

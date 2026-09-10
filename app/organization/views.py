@@ -2,7 +2,7 @@
 
 from uuid import UUID
 from ninja import Router
-from access.auth import JWTAuthBearer
+from access.auth_utils import JWTAuthBearer
 from config.exceptions import (
     BadRequestException,
     NotFoundException,
@@ -21,34 +21,57 @@ from organization.services import (
     create_organization_service,
     list_organizations_service,
     get_organization_service,
+    list_user_roles_service,
     update_organization_service,
     org_admin_update_organization_service,
     deactivate_organization_service,
     get_org_settings_service,
     update_org_settings_service,
+    list_organization_members_service
 )
-from users.models import Role
-
-R = Role.RoleName
+from organization.models import OrganizationMember
 
 
-router = Router(tags=["Organizations"], auth=JWTAuthBearer())
+R = OrganizationMember.RoleChoices
+
+router = Router(tags=["Organizations"])
+
+USER_MANAGERS = [R.ORG_ADMIN, R.MANAGEMENT, "SUPERUSER"]
 
 
-@router.post("/organizations", auth=None)
-async def create_organization(request, data: OrganizationCreateSchema) -> dict:
+@router.get("/roles", auth=JWTAuthBearer())
+@require_roles(*USER_MANAGERS)
+def list_user_role(request, organization_id: UUID) -> list[dict]:
+    """
+    Lists all roles available within the authenticated user's organization.
+    """
+    try:
+        result = list_user_roles_service(organization_id)
+        return create_response(
+            status_code=StatusCode.OK,
+            data=result,
+        )
+    except NotFoundException as e:
+        raise NotFoundException(str(e)) from e
+    except Exception as e:
+        raise BadRequestException(f"Failed to list roles: {str(e)}") from e
+
+
+@router.post("/create", auth=JWTAuthBearer())
+@require_roles("SUPERUSER")
+def create_organization(request, data: OrganizationCreateSchema):
+    print("Creating organization...")
     """
     Creates a new organization.
     Superuser only — no JWT auth required here since
     this is called by the platform superuser directly.
     Only accessible via Django admin or a secured internal endpoint.
     """
+    # print(request.auth)
+    # print(request.user)
+
     try:
-        if not request.user.is_superuser:
-            raise ForbiddenException(
-                "Access denied: Only superusers can create organizations"
-            ) from None
-        result = await create_organization_service(data)
+        result = create_organization_service(data)
         return create_response(status_code=StatusCode.CREATED, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e
@@ -56,19 +79,34 @@ async def create_organization(request, data: OrganizationCreateSchema) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/organizations")
-async def list_organizations(request) -> dict:
+
+@router.get("/organizations/{organization_id}/members", auth=JWTAuthBearer())
+@require_roles(*USER_MANAGERS)
+def list_organization_members(request, organization_id: UUID) -> list[dict]:
+    """
+    Lists all members of an organization.
+    """
+    try:
+        result = list_organization_members_service(organization_id)
+        return create_response(
+            status_code=StatusCode.OK,
+            data=result,
+        )
+    except NotFoundException as e:
+        raise NotFoundException(str(e)) from e
+    except Exception as e:
+        raise BadRequestException(f"Failed to list organization members: {str(e)}") from e
+
+
+@router.get("/", auth=JWTAuthBearer())
+@require_roles("SUPERUSER")
+def list_organizations(request) -> dict:
     """
     Lists all organizations.
     Superuser only.
     """
     try:
-        auth = request.auth
-        if not auth.get("is_superuser"):
-            raise ForbiddenException(
-                "Access denied: Only superusers can list all organizations"
-            ) from None
-        result = await list_organizations_service()
+        result = list_organizations_service()
         return create_response(status_code=StatusCode.OK, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e
@@ -76,9 +114,9 @@ async def list_organizations(request) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.get("/organizations/{org_id}")
-@require_roles(R.ORG_ADMIN, R.MANAGEMENT)
-async def get_organization(request, org_id: UUID) -> dict:
+@router.get("/organizations/{org_id}", auth=JWTAuthBearer())
+@require_roles(USER_MANAGERS)
+def get_organization(request, org_id: UUID) -> dict:
     """
     Retrieves a single organization.
     Org admin can only retrieve their own org.
@@ -105,7 +143,7 @@ async def get_organization(request, org_id: UUID) -> dict:
         #             "You can only view your own organization"
         #         ) from None
 
-        result = await get_organization_service(org_id)
+        result = get_organization_service(org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e
@@ -115,9 +153,9 @@ async def get_organization(request, org_id: UUID) -> dict:
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/organizations/{org_id}/admin-update")
+@router.patch("/organizations/{org_id}/admin-update", auth=JWTAuthBearer())
 @require_roles(R.ORG_ADMIN)
-async def org_admin_update_organization(
+def org_admin_update_organization(
     request, org_id: UUID, data: OrganizationOrgAdminUpdateSchema
 ) -> dict:
     """
@@ -144,7 +182,7 @@ async def org_admin_update_organization(
         #         "You can only update your own organization"
         #     ) from None
 
-        result = await org_admin_update_organization_service(org_id, data)
+        result = org_admin_update_organization_service(org_id, data)
         return create_response(status_code=StatusCode.OK, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e
@@ -154,8 +192,8 @@ async def org_admin_update_organization(
         raise BadRequestException(str(e)) from e
 
 
-@router.patch("/organizations/{org_id}")
-async def update_organization(
+@router.patch("/organizations/{org_id}", auth=JWTAuthBearer())
+def update_organization(
     request, org_id: UUID, data: OrganizationUpdateSchema
 ) -> dict:
     """
@@ -168,7 +206,7 @@ async def update_organization(
                 "Access denied: Only superusers can perform full organization updates"
             ) from None
 
-        result = await update_organization_service(org_id, data)
+        result = update_organization_service(org_id, data)
         return create_response(status_code=StatusCode.OK, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e
@@ -179,7 +217,7 @@ async def update_organization(
 
 
 @router.delete("/organizations/{org_id}")
-async def deactivate_organization(request, org_id: UUID) -> dict:
+def deactivate_organization(request, org_id: UUID) -> dict:
     """
     Deactivates an organization — superuser only.
     """
@@ -190,7 +228,7 @@ async def deactivate_organization(request, org_id: UUID) -> dict:
                 "Access denied: Only superusers can deactivate organizations"
             ) from None
 
-        await deactivate_organization_service(org_id)
+        deactivate_organization_service(org_id)
         return create_response(
             status_code=StatusCode.NO_CONTENT,
             message="Organization deactivated successfully.",
@@ -205,7 +243,7 @@ async def deactivate_organization(request, org_id: UUID) -> dict:
 
 @router.get("/organizations/{org_id}/settings")
 @require_roles(R.ORG_ADMIN, R.MANAGEMENT)
-async def get_org_settings(request, org_id: UUID) -> dict:
+def get_org_settings(request, org_id: UUID) -> dict:
     """Retrieves settings for an organization."""
     try:
         auth = request.auth
@@ -224,7 +262,7 @@ async def get_org_settings(request, org_id: UUID) -> dict:
                 message="Access denied. You do not own this resource"
             )
 
-        result = await get_org_settings_service(org_id)
+        result = get_org_settings_service(org_id)
         return create_response(status_code=StatusCode.OK, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e
@@ -236,7 +274,7 @@ async def get_org_settings(request, org_id: UUID) -> dict:
 
 @router.patch("/organizations/{org_id}/settings")
 @require_roles(R.ORG_ADMIN)
-async def update_org_settings(
+def update_org_settings(
     request, org_id: UUID, data: OrganizationSettingsUpdateSchema
 ) -> dict:
     """Updates organization settings — org admin only."""
@@ -257,7 +295,7 @@ async def update_org_settings(
                 message="Access denied. You do not own this resource"
             )
 
-        result = await update_org_settings_service(org_id, data)
+        result = update_org_settings_service(org_id, data)
         return create_response(status_code=StatusCode.OK, data=result)
     except ForbiddenException as e:
         raise ForbiddenException(str(e)) from e

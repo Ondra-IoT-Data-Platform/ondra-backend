@@ -4,14 +4,16 @@ from typing import  Any
 
 
 class TenantService:
-    def __init__(self, request):
+    def __init__(self, request, org_id: str | None = None):
         self.user = request.auth
-        self.org_id = request.auth.get("org_id")
+        self.org_id = org_id
 
-        if not self.org_id:
-            raise ForbiddenException(
-                "User does not belong to an organization"
-            ) from None
+        # self.org_id = request.auth.get("org_id")
+
+        # if not self.org_id:
+        #     raise ForbiddenException(
+        #         "User does not belong to an organization"
+        #     ) from None
 
     def check_tenant(self,  object: dict | Any) -> dict | None:
         """

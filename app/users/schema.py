@@ -4,7 +4,7 @@ from uuid import UUID
 
 from ninja import ModelSchema, Schema
 
-from users.models import DriverProfile, OfficeProfile, Role, User
+from users.models import DriverProfile, OfficeProfile, User
 
 
 # ── User schemas ───────────────────────────────────────────
@@ -13,7 +13,8 @@ class UserCreateSchema(Schema):
     """Creates a new user. Password is hashed in the service layer."""
     email: str
     password: str
-    role_id: int
+    organization_token: str
+
 
 
 class UserUpdateSchema(ModelSchema):
@@ -24,30 +25,20 @@ class UserUpdateSchema(ModelSchema):
         fields_optional = "__all__"
 
 
-class UserRoleUpdateSchema(Schema):
-    """Changes a user's assigned role."""
-    role_id: int
-
-
-class UserOutSchema(ModelSchema):
+class UserOutSchema(Schema):
     """Safe user output. Excludes password and internal permission fields."""
-    role_name: Optional[str] = None
+    id: UUID
+    email: str
+    is_active: bool
+    organization_id: Optional[UUID] = None
+    role: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
-    class Meta:
-        model = User
-        fields = [
-            "id",
-            "email",
-            "is_active",
-            "organization",
-            "role",
-            "created_at",
-            "updated_at",
-        ]
+    # @staticmethod
+    # def resolve_role_name(obj) -> Optional[str]:
+    #     return obj.role.name if obj.role else None
 
-    @staticmethod
-    def resolve_role_name(obj) -> Optional[str]:
-        return obj.role.name if obj.role else None
 
 
 class UserWithProfileOutSchema(Schema):
@@ -55,8 +46,8 @@ class UserWithProfileOutSchema(Schema):
     id: UUID
     email: str
     is_active: bool
-    organization_id: UUID
-    role_name: Optional[str] = None
+    # organization_id: UUID
+    # role_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     office_profile: Optional["OfficeProfileOutSchema"] = None
@@ -65,11 +56,11 @@ class UserWithProfileOutSchema(Schema):
 
 # ── Role schema ────────────────────────────────────────────
 
-class RoleOutSchema(ModelSchema):
-    """Role output scoped to an organization."""
-    class Meta:
-        model = Role
-        fields = ["id", "name", "organization", "created_at"]
+# class RoleOutSchema(ModelSchema):
+#     """Role output scoped to an organization."""
+#     class Meta:
+#         model = Role
+#         fields = ["id", "name", "created_at"]
 
 
 # ── Office profile schemas ─────────────────────────────────

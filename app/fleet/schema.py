@@ -2,14 +2,28 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
-
+# from enum import Enum
 from ninja import ModelSchema, Schema
 
 from fleet.models import Product, Route, Truck, TruckLocation, TruckStatusLog
 
 
-# ── Product ────────────────────────────────────────────────
 
+# ── Enums ────────────────────────────────────────────────
+# class TruckStatus(Enum):
+#     OUTBOUND = "outbound", "Outbound"
+#     INBOUND = "inbound", "Inbound"
+#     ARRIVED = "arrived", "Arrived"
+#     AT_CUSTOMER = "at_customer", "At Customer"
+#     FAULTY = "faulty", "Faulty"
+#     AT_TERMINAL = "at_terminal", "At Terminal"
+#     PARKED = "parked", "Parked"
+#     UNDER_MAINTENANCE = "under_maintenance", "Under Maintenance"
+#     DECOMMISSIONED = "decommissioned", "Decommissioned"
+
+
+
+# ── Product ────────────────────────────────────────────────
 class ProductOutSchema(ModelSchema):
     """Product output."""
     class Meta:
@@ -20,12 +34,11 @@ class ProductOutSchema(ModelSchema):
         ]
 
 
-class ProductCreateSchema(ModelSchema):
+class ProductCreateSchema(Schema):
     """Creates a product."""
-    class Meta:
-        model = Product
-        fields = ["name", "description", "unit"]
-        fields_optional = ["description", "unit"]
+    name: str
+    description: Optional[str] = None
+    unit: Optional[int] = "litres"
 
 
 class ProductUpdateSchema(ModelSchema):

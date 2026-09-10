@@ -9,10 +9,21 @@ dependencies = [
     "django>=6.0.5",
     "django-ninja>=1.6.2",
     "django-ninja-jwt>=5.4.4",
+    "gmqtt>=0.7.0",
+    "httpx>=0.28.1",
+    "matplotlib>=3.11.1",
+    "nest-asyncio>=1.6.0",
+    "numpy>=2.5.1",
+    "p>=1.5.0",
+    "pandas>=3.0.5",
     "pillow>=12.2.0",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
+    "pyjwt>=2.13.0",
+    "scikit-learn>=1.9.0",
+    "seaborn>=0.13.2",
     "uvicorn>=0.48.0",
+    "xgboost-cpu>=3.4.1",
 ]
 
 [dependency-groups]

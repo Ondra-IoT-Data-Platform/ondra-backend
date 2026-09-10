@@ -71,6 +71,10 @@ app-showmigrations:
 app-superuser:
 	$(DOCKER-RUN) createsuperuser
 
+
+createsuperuser:
+	docker compose run --rm --entrypoint "" app python manage.py createsuperuser
+
 makemigrations:
 	docker compose run --rm --entrypoint "" app python manage.py makemigrations
 

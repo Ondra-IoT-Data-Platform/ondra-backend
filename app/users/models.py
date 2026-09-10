@@ -22,6 +22,9 @@ class UserManager(BaseUserManager["User"]):
     def create_user(
         self, email: str, password: str | None = None, **extra_fields: Any
     ) -> "User":
+        extra_fields.setdefault("is_staff", False)
+        extra_fields.setdefault("is_superuser", False)
+
         if not email:
             raise ValueError("The Email field must be set")
         email = self.normalize_email(email)
@@ -47,44 +50,6 @@ class UserManager(BaseUserManager["User"]):
 
 
 
-class Role(models.Model):
-    """
-    Stores the 8 fixed system roles scoped to an organization.
-    Seeded automatically when an organization is created.
-    Role names are fixed — they do not change per organization.
-    """
-
-    class RoleName(models.TextChoices):
-        ORG_ADMIN = "org_admin", "Org Admin"
-        MANAGEMENT = "management", "Management"
-        LOGISTICS_OFFICER = "logistics_officer", "Logistics Officer"
-        TRACKING_OFFICER = "tracking_officer", "Tracking Officer"
-        WORKSHOP = "workshop", "Workshop"
-        SALES = "sales", "Sales / Marketer"
-        CUSTOMER = "customer", "Customer"
-        DRIVER = "driver", "Driver"
-
-    name = models.CharField(
-        max_length=50,
-        choices=RoleName.choices,
-    )
-    organization = models.ForeignKey(
-        Organizations,
-        on_delete=models.CASCADE,
-        related_name="roles",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ("name", "organization")
-        ordering = ["name"]
-
-    def __str__(self) -> str:
-        return f"{self.get_name_display()} — {self.organization.name}"
-
-
-
-
 class User(AbstractBaseUser, PermissionsMixin):
     """
     Account model with fields for email, full name, job title, operations location, role,
@@ -95,14 +60,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(
         _("email address"), unique=True, db_index=True, validators=[EmailValidator()]
     )
-    organization = models.ForeignKey(Organizations, on_delete=models.CASCADE)
-    role = models.ForeignKey(
-        Role, on_delete=models.SET_NULL, null=True, blank=True, related_name="users"
-    )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    last_login = None
+    last_login_at = models.DateTimeField(null=True, blank=True, default=None)
+    deleted_at = models.DateTimeField(null=True, blank=True, default=None)
 
     objects = UserManager()
 
@@ -123,9 +87,24 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = _("user")
         verbose_name_plural = _("users")
+        indexes = [
+            models.Index(fields=["email"]),
+            models.Index(fields=["is_active"]),
+        ]
 
     def __str__(self) -> str:
         return self.email
+
+    def update_last_login(self):
+        """Call this on successful login instead of Django's built-in."""
+        self.last_login_at = timezone.now()
+        self.save(update_fields=["last_login_at", "updated_at"])
+
+    def soft_delete(self):
+        """Soft delete — marks deleted_at and deactivates the user."""
+        self.deleted_at = timezone.now()
+        self.is_active = False
+        self.save(update_fields=["deleted_at", "is_active", "updated_at"])
 
 
 class UserProfile(models.Model):
